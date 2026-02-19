@@ -26,6 +26,10 @@ import (
 
 // GetPodGroupLabels extracts pod group information from pod labels
 func GetPodGroupLabels(pod *v1.Pod) (name string, minAvailable int, err error) {
+	if pod == nil {
+		return "", 0, fmt.Errorf("pod is nil")
+	}
+
 	const (
 		PodGroupNameLabel         = "pod-group.scheduling.kubenexus.io/name"
 		PodGroupMinAvailableLabel = "pod-group.scheduling.kubenexus.io/min-available"

@@ -20,8 +20,40 @@ build:
 
 .PHONY: test
 test:
-	@echo "Running tests..."
+	@echo "Running unit tests..."
 	$(BUILDENVVAR) go test -v ./pkg/apis/... ./pkg/plugins/coscheduling/... ./pkg/plugins/resourcereservation/... ./pkg/workload/... ./pkg/utils/... ./pkg/scheduler/...
+
+.PHONY: test-integration
+test-integration:
+	@echo "Running integration tests..."
+	$(BUILDENVVAR) go test -v -timeout=10m ./test/integration/...
+
+.PHONY: test-e2e
+test-e2e:
+	@echo "Running E2E tests..."
+	@echo "This will create a Kind cluster, run tests, and clean up"
+	$(BUILDENVVAR) go test -v -timeout=30m ./test/e2e/...
+
+.PHONY: test-benchmark
+test-benchmark:
+	@echo "Running performance benchmarks..."
+	$(BUILDENVVAR) go test -bench=. -benchmem -benchtime=10s ./test/benchmark/...
+
+.PHONY: test-all
+test-all: test test-integration test-e2e
+	@echo "All tests completed!"
+
+.PHONY: test-coverage
+test-coverage:
+	@echo "Running tests with coverage..."
+	$(BUILDENVVAR) go test -cover -coverprofile=coverage.out -covermode=atomic ./pkg/...
+	@echo "Coverage report generated: coverage.out"
+	@echo "View coverage: go tool cover -html=coverage.out"
+
+.PHONY: test-coverage-html
+test-coverage-html: test-coverage
+	@echo "Opening coverage report in browser..."
+	go tool cover -html=coverage.out
 
 .PHONY: docker-build
 docker-build:

@@ -37,6 +37,17 @@ jobs:
     - name: Run tests
       run: make test
     
+    - name: Generate coverage report
+      run: make test-coverage
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./coverage.out
+        flags: unit
+        name: unit-tests
+        fail_ci_if_error: false  # Don't fail CI if Codecov upload fails
+    
     - name: Check formatting
       run: |
         if [ -n "$(gofmt -l .)" ]; then
