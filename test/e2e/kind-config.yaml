@@ -1,41 +1,11 @@
-# Kind cluster configuration for E2E tests
+# Kind cluster configuration for E2E testing
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
-name: kubenexus-test
+name: kubenexus-e2e
 nodes:
-  # Control plane node
   - role: control-plane
-    kubeadmConfigPatches:
-    - |
-      kind: ClusterConfiguration
-      apiServer:
-        extraArgs:
-          "enable-admission-plugins": "NodeRestriction,PodPreset"
-      scheduler:
-        extraArgs:
-          "v": "4"
-  
-  # Worker nodes for testing
+    image: kindest/node:v1.31.0
   - role: worker
-    labels:
-      topology.kubernetes.io/zone: zone-a
-      node.kubernetes.io/instance-type: gpu-node
+    image: kindest/node:v1.31.0
   - role: worker
-    labels:
-      topology.kubernetes.io/zone: zone-b
-      node.kubernetes.io/instance-type: gpu-node
-  - role: worker
-    labels:
-      topology.kubernetes.io/zone: zone-c
-      node.kubernetes.io/instance-type: cpu-node
-
-# Enable feature gates for testing
-featureGates:
-  PodSchedulingReadiness: true
-  TopologyManager: true
-
-# Network configuration
-networking:
-  disableDefaultCNI: false
-  podSubnet: "10.244.0.0/16"
-  serviceSubnet: "10.96.0.0/16"
+    image: kindest/node:v1.31.0
