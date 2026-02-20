@@ -297,19 +297,37 @@ func waitForSchedulerReady() error {
 		}
 
 		for _, pod := range pods.Items {
-			if pod.Status.Phase == v1.PodRunning {
-				for _, cond := range pod.Status.Conditions {
-					if cond.Type == v1.PodReady && cond.Status == v1.ConditionTrue {
-						fmt.Println("Scheduler is ready!")
-						return true, nil
-					}
+			// Print detailed pod status for debugging
+			fmt.Printf("Scheduler pod %s: Phase=%s, Ready=%v\n", pod.Name, pod.Status.Phase, isPodReady(pod))
+			
+			// Print container statuses
+			for _, cs := range pod.Status.ContainerStatuses {
+				if cs.State.Waiting != nil {
+					fmt.Printf("  Container %s: Waiting - %s: %s\n", cs.Name, cs.State.Waiting.Reason, cs.State.Waiting.Message)
 				}
+				if cs.State.Terminated != nil {
+					fmt.Printf("  Container %s: Terminated - %s (exit %d): %s\n", cs.Name, cs.State.Terminated.Reason, cs.State.Terminated.ExitCode, cs.State.Terminated.Message)
+				}
+			}
+			
+			if pod.Status.Phase == v1.PodRunning && isPodReady(pod) {
+				fmt.Println("Scheduler is ready!")
+				return true, nil
 			}
 		}
 
 		fmt.Println("Waiting for scheduler to be ready...")
 		return false, nil
 	})
+}
+
+func isPodReady(pod v1.Pod) bool {
+	for _, cond := range pod.Status.Conditions {
+		if cond.Type == v1.PodReady && cond.Status == v1.ConditionTrue {
+			return true
+		}
+	}
+	return false
 }
 
 func makeGangJob(name, namespace string, parallelism int) *batchv1.Job {
