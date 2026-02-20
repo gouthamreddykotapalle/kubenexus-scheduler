@@ -9,6 +9,10 @@ on:
     # Run weekly on Sunday at 4 AM UTC
     - cron: '0 4 * * 0'
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   benchmark:
     name: Performance Benchmarks
