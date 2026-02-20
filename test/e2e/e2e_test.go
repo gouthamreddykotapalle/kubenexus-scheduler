@@ -284,8 +284,8 @@ func deployScheduler() error {
 func waitForSchedulerReady() error {
 	ctx := context.Background()
 	return wait.PollUntilContextTimeout(ctx, 5*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
-		pods, err := clientset.CoreV1().Pods("kube-system").List(ctx, metav1.ListOptions{
-			LabelSelector: "component=kubenexus-scheduler",
+		pods, err := clientset.CoreV1().Pods("kubenexus-system").List(ctx, metav1.ListOptions{
+			LabelSelector: "app=kubenexus-scheduler",
 		})
 		if err != nil {
 			return false, err
