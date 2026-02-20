@@ -210,7 +210,30 @@ func createKindCluster() error {
 	)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+
+	// Get kubeconfig for the Kind cluster
+	cmd = exec.Command("kind", "get", "kubeconfig", "--name", "kubenexus-test")
+	kubeconfigBytes, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to get kubeconfig: %w", err)
+	}
+
+	// Write kubeconfig to a temporary file
+	tmpKubeconfig := filepath.Join(os.TempDir(), "kubenexus-test-kubeconfig")
+	if err := os.WriteFile(tmpKubeconfig, kubeconfigBytes, 0600); err != nil {
+		return fmt.Errorf("failed to write kubeconfig: %w", err)
+	}
+
+	// Set KUBECONFIG environment variable
+	if err := os.Setenv("KUBECONFIG", tmpKubeconfig); err != nil {
+		return fmt.Errorf("failed to set KUBECONFIG: %w", err)
+	}
+
+	fmt.Printf("KUBECONFIG set to: %s\n", tmpKubeconfig)
+	return nil
 }
 
 func cleanupKindCluster() {
@@ -261,6 +284,7 @@ func deployScheduler() error {
 
 	// Apply deployment manifest
 	cmd = exec.Command("kubectl", "apply", "-f", filepath.Join(workspaceRoot, "deploy", "kubenexus-scheduler.yaml"))
+	cmd.Env = append(os.Environ(), "KUBECONFIG="+os.Getenv("KUBECONFIG"))
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
