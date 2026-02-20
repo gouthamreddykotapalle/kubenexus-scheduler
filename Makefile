@@ -52,8 +52,46 @@ build:
 
 .PHONY: test
 test:
-	@echo "Running tests..."
+	@echo "Running unit tests..."
 	$(BUILDENVVAR) go test -v ./pkg/apis/... ./pkg/plugins/coscheduling/... ./pkg/plugins/resourcereservation/... ./pkg/workload/... ./pkg/utils/... ./pkg/scheduler/...
+
+.PHONY: test-integration
+test-integration:
+	@echo "Running integration tests..."
+	@if [ -d "./test/integration" ]; then \
+		$(BUILDENVVAR) go test -v -timeout=10m ./test/integration/...; \
+	else \
+		echo "⚠️  No integration tests found in ./test/integration"; \
+	fi
+
+.PHONY: test-e2e
+test-e2e:
+	@echo "Running E2E tests..."
+	@if [ -d "./test/e2e" ]; then \
+		$(BUILDENVVAR) go test -v -timeout=30m ./test/e2e/...; \
+	else \
+		echo "⚠️  No E2E tests found in ./test/e2e"; \
+	fi
+
+.PHONY: test-benchmark
+test-benchmark:
+	@echo "Running benchmarks..."
+	@if [ -d "./test/benchmark" ]; then \
+		$(BUILDENVVAR) go test -bench=. -benchmem -benchtime=10s ./test/benchmark/...; \
+	else \
+		echo "⚠️  No benchmarks found in ./test/benchmark"; \
+	fi
+
+.PHONY: test-all
+test-all: test test-integration test-e2e
+	@echo "✅ All tests completed"
+
+.PHONY: test-coverage
+test-coverage:
+	@echo "Running tests with coverage..."
+	$(BUILDENVVAR) go test -v -coverprofile=coverage.out -covermode=atomic ./pkg/...
+	go tool cover -html=coverage.out -o coverage.html
+	@echo "✅ Coverage report generated: coverage.html"
 
 .PHONY: docker-build
 docker-build:
