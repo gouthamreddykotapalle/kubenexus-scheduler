@@ -1,6 +1,6 @@
 module sigs.k8s.io/scheduler-plugins
 
-go 1.25
+go 1.25.0
 
 require (
 	github.com/prometheus/client_golang v1.23.2
