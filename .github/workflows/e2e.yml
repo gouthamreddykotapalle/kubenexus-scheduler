@@ -51,24 +51,9 @@ jobs:
     - name: Build scheduler binary
       run: make build
     
-    - name: Build Docker image
-      run: make docker-build
-    
     - name: Run E2E tests
       run: make test-e2e
       timeout-minutes: 30
-    
-    - name: Collect logs on failure
-      if: failure()
-      run: |
-        echo "=== Scheduler Logs ==="
-        kubectl logs -n kube-system -l component=kubenexus-scheduler --tail=200 || true
-        echo "=== All Pods ==="
-        kubectl get pods -A -o wide || true
-        echo "=== Events ==="
-        kubectl get events -A --sort-by='.lastTimestamp' || true
-        echo "=== Nodes ==="
-        kubectl get nodes -o wide || true
     
     - name: Upload test results
       if: always()
@@ -78,9 +63,4 @@ jobs:
         path: |
           **/e2e-test-*.log
           **/e2e-test-*.xml
-          **/kind-logs/**
         retention-days: 7
-    
-    - name: Cleanup Kind cluster
-      if: always()
-      run: kind delete cluster --name kubenexus-test || true
