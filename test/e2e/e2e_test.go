@@ -42,7 +42,7 @@ import (
 )
 
 var (
-	clientset *kubernetes.Clientset
+	clientset      *kubernetes.Clientset
 	clusterCreated bool
 )
 
@@ -112,7 +112,7 @@ func TestE2EGangScheduling(t *testing.T) {
 	if _, err := clientset.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{}); err != nil {
 		t.Fatalf("Failed to create namespace: %v", err)
 	}
-	defer clientset.CoreV1().Namespaces().Delete(ctx, namespace, metav1.DeleteOptions{})
+	defer func() { _ = clientset.CoreV1().Namespaces().Delete(ctx, namespace, metav1.DeleteOptions{}) }()
 
 	// Create a job with gang scheduling
 	job := makeGangJob("distributed-training", namespace, 4)
@@ -121,7 +121,7 @@ func TestE2EGangScheduling(t *testing.T) {
 	}
 
 	// Wait for all pods to be scheduled
-	err := wait.PollImmediate(5*time.Second, 2*time.Minute, func() (bool, error) {
+	err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
 		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 			LabelSelector: "job-name=distributed-training",
 		})
@@ -178,7 +178,7 @@ func TestE2EHybridWorkloads(t *testing.T) {
 	if _, err := clientset.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{}); err != nil {
 		t.Fatalf("Failed to create namespace: %v", err)
 	}
-	defer clientset.CoreV1().Namespaces().Delete(ctx, namespace, metav1.DeleteOptions{})
+	defer func() { _ = clientset.CoreV1().Namespaces().Delete(ctx, namespace, metav1.DeleteOptions{}) }()
 
 	// Create service pods (should spread)
 	t.Logf("Creating service pods...")
@@ -209,7 +209,7 @@ func createKindCluster() error {
 
 func cleanupKindCluster() {
 	cmd := exec.Command("kind", "delete", "cluster", "--name", "kubenexus-test")
-	cmd.Run() // Ignore errors during cleanup
+	_ = cmd.Run() // Explicitly ignore errors during cleanup
 }
 
 func setupClient() {
@@ -258,7 +258,7 @@ func deployScheduler() error {
 
 func waitForSchedulerReady() error {
 	ctx := context.Background()
-	return wait.PollImmediate(5*time.Second, 2*time.Minute, func() (bool, error) {
+	return wait.PollUntilContextTimeout(ctx, 5*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
 		pods, err := clientset.CoreV1().Pods("kube-system").List(ctx, metav1.ListOptions{
 			LabelSelector: "component=kubenexus-scheduler",
 		})
@@ -300,17 +300,17 @@ func makeGangJob(name, namespace string, parallelism int) *batchv1.Job {
 			Template: v1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						"pod-group.scheduling.kubenexus.io/name":         name,
+						"pod-group.scheduling.kubenexus.io/name":          name,
 						"pod-group.scheduling.kubenexus.io/min-available": fmt.Sprintf("%d", parallelism),
 					},
 				},
 				Spec: v1.PodSpec{
-					SchedulerName:     "kubenexus-scheduler",
-					RestartPolicy:     v1.RestartPolicyNever,
+					SchedulerName: "kubenexus-scheduler",
+					RestartPolicy: v1.RestartPolicyNever,
 					Containers: []v1.Container{
 						{
-							Name:  "worker",
-							Image: "busybox:latest",
+							Name:    "worker",
+							Image:   "busybox:latest",
 							Command: []string{"sh", "-c", "echo 'Training...' && sleep 30"},
 						},
 					},
@@ -331,7 +331,7 @@ func dumpPodStatus(t *testing.T, ctx context.Context, namespace string) {
 	for _, pod := range pods.Items {
 		t.Logf("Pod %s: Phase=%s, NodeName=%s, Message=%s",
 			pod.Name, pod.Status.Phase, pod.Spec.NodeName, pod.Status.Message)
-		
+
 		for _, cond := range pod.Status.Conditions {
 			if cond.Status != v1.ConditionTrue {
 				t.Logf("  Condition %s: %s - %s", cond.Type, cond.Status, cond.Message)

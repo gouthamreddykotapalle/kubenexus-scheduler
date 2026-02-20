@@ -67,7 +67,7 @@ func BenchmarkWorkloadClassification(b *testing.B) {
 // BenchmarkWorkloadClassificationParallel tests classification under concurrent load
 func BenchmarkWorkloadClassificationParallel(b *testing.B) {
 	pod := makeSparkPod("spark-driver-bench")
-	
+
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			_ = workload.ClassifyPod(pod)
@@ -78,7 +78,7 @@ func BenchmarkWorkloadClassificationParallel(b *testing.B) {
 // BenchmarkGangSchedulingPermit benchmarks gang scheduling permit decision
 func BenchmarkGangSchedulingPermit(b *testing.B) {
 	b.Skip("Requires full scheduler framework setup - implement after integration tests")
-	
+
 	// This should benchmark:
 	// - Small gangs (2-4 pods)
 	// - Medium gangs (8-16 pods)
@@ -89,7 +89,7 @@ func BenchmarkGangSchedulingPermit(b *testing.B) {
 // BenchmarkTopologyScoring benchmarks GPU topology scoring
 func BenchmarkTopologyScoring(b *testing.B) {
 	b.Skip("Requires node topology data - implement after NUMA plugin refactor")
-	
+
 	// This should benchmark:
 	// - Single GPU pod scoring
 	// - Multi-GPU pod scoring (2, 4, 8 GPUs)
@@ -99,7 +99,7 @@ func BenchmarkTopologyScoring(b *testing.B) {
 // BenchmarkSchedulingLatency measures end-to-end scheduling latency
 func BenchmarkSchedulingLatency(b *testing.B) {
 	b.Skip("Requires full scheduler setup - implement in E2E benchmarks")
-	
+
 	// This should measure:
 	// - Single pod scheduling latency
 	// - Gang scheduling latency (all pods)
@@ -111,17 +111,17 @@ func BenchmarkSchedulingLatency(b *testing.B) {
 func BenchmarkMemoryUsage(b *testing.B) {
 	// Test memory usage with increasing number of pods
 	podCounts := []int{10, 100, 1000, 10000}
-	
+
 	for _, count := range podCounts {
 		b.Run(fmt.Sprintf("Pods_%d", count), func(b *testing.B) {
 			pods := make([]*v1.Pod, count)
 			for i := 0; i < count; i++ {
 				pods[i] = makeSparkPod(fmt.Sprintf("pod-%d", i))
 			}
-			
+
 			b.ResetTimer()
 			b.ReportAllocs()
-			
+
 			for i := 0; i < b.N; i++ {
 				for _, pod := range pods {
 					_ = workload.ClassifyPod(pod)
@@ -134,7 +134,7 @@ func BenchmarkMemoryUsage(b *testing.B) {
 // BenchmarkConcurrentGangs benchmarks multiple concurrent gang scheduling operations
 func BenchmarkConcurrentGangs(b *testing.B) {
 	b.Skip("Requires full scheduler framework - implement after integration tests")
-	
+
 	// This should benchmark:
 	// - 10 concurrent small gangs (4 pods each)
 	// - 5 concurrent medium gangs (16 pods each)
@@ -149,7 +149,7 @@ func makeSparkPod(name string) *v1.Pod {
 			Name:      name,
 			Namespace: "default",
 			Labels: map[string]string{
-				"spark-role": "driver",
+				"spark-role":         "driver",
 				"spark-app-selector": "spark-pi",
 			},
 		},
@@ -176,7 +176,7 @@ func makeTensorFlowPod(name string) *v1.Pod {
 			Name:      name,
 			Namespace: "default",
 			Labels: map[string]string{
-				"app": "tensorflow",
+				"app":      "tensorflow",
 				"job-role": "worker",
 			},
 		},
@@ -241,8 +241,8 @@ func makeBatchPod(name string) *v1.Pod {
 			RestartPolicy: v1.RestartPolicyNever,
 			Containers: []v1.Container{
 				{
-					Name:  "worker",
-					Image: "busybox:latest",
+					Name:    "worker",
+					Image:   "busybox:latest",
 					Command: []string{"sh", "-c", "echo processing && sleep 60"},
 					Resources: v1.ResourceRequirements{
 						Requests: v1.ResourceList{
@@ -259,7 +259,7 @@ func makeBatchPod(name string) *v1.Pod {
 // BenchmarkComparisonWithDefaultScheduler compares KubeNexus with default scheduler
 func BenchmarkComparisonWithDefaultScheduler(b *testing.B) {
 	b.Skip("Requires side-by-side scheduler setup - implement in E2E benchmarks")
-	
+
 	// This should compare:
 	// - Single pod latency: KubeNexus vs default
 	// - Gang scheduling: KubeNexus vs default + coscheduling plugin

@@ -33,7 +33,7 @@ import (
 func TestIntegrationSuite(t *testing.T) {
 	t.Log("Integration test suite - requires test Kubernetes API server")
 	t.Log("Run 'make test-integration' to execute full integration tests")
-	
+
 	// Integration tests to implement:
 	tests := []string{
 		"Gang scheduling with 3+ pods",
@@ -44,7 +44,7 @@ func TestIntegrationSuite(t *testing.T) {
 		"PreemptionPlugin interaction",
 		"Multi-plugin pipeline (Classification -> Topology -> Gang -> Reservation)",
 	}
-	
+
 	for _, testName := range tests {
 		t.Run(testName, func(t *testing.T) {
 			t.Skip("Integration test not yet implemented - requires envtest setup")
@@ -55,7 +55,7 @@ func TestIntegrationSuite(t *testing.T) {
 // TestGangSchedulingEndToEnd tests gang scheduling from pod creation to scheduling decision
 func TestGangSchedulingEndToEnd(t *testing.T) {
 	t.Skip("Requires envtest - see test/integration/README.md for setup")
-	
+
 	// This test should:
 	// 1. Create a fake K8s API server
 	// 2. Deploy KubeNexus scheduler
@@ -67,7 +67,7 @@ func TestGangSchedulingEndToEnd(t *testing.T) {
 // TestResourceReservationIntegration tests resource reservation with real API calls
 func TestResourceReservationIntegration(t *testing.T) {
 	t.Skip("Requires envtest - see test/integration/README.md for setup")
-	
+
 	// This test should:
 	// 1. Create driver pod for Spark job
 	// 2. Verify ResourceReservation CRD is created
