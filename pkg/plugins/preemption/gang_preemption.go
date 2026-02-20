@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package preemption implements gang-aware preemption logic for the scheduler.
 package preemption
 
 import (

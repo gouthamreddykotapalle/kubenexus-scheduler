@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+
+// Package coscheduling implements gang scheduling with enterprise features.
 package coscheduling
 
 import (
@@ -168,6 +170,7 @@ func (cs *Coscheduling) getPodGroupInfoFromQueued(queuedInfo framework.QueuedPod
 			}
 			cs.podGroupInfos.Store(key, pgInfo)
 		}
+		//nolint:errcheck // Type assertion is safe here; stored value is always *PodGroupInfo
 		return pgInfo.(*PodGroupInfo)
 	}
 
@@ -237,7 +240,7 @@ func (cs *Coscheduling) Permit(ctx context.Context, state framework.CycleState, 
 	
 	cs.frameworkHandle.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
 		if waitingPod.GetPod().Namespace == namespace {
-			waitingPodGroupName, _, _ := utils.GetPodGroupLabels(waitingPod.GetPod())
+			waitingPodGroupName, _, _ := utils.GetPodGroupLabels(waitingPod.GetPod()) //nolint:errcheck // Error ignored intentionally
 			if waitingPodGroupName == podGroupName {
 				klog.V(4).Infof("Permit: allowing pod %s/%s", namespace, waitingPod.GetPod().Name)
 				waitingPod.Allow(cs.Name())
@@ -265,7 +268,7 @@ func (cs *Coscheduling) Unreserve(ctx context.Context, state framework.CycleStat
 	
 	cs.frameworkHandle.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
 		if waitingPod.GetPod().Namespace == p.Namespace {
-			waitingPodGroupName, _, _ := utils.GetPodGroupLabels(waitingPod.GetPod())
+			waitingPodGroupName, _, _ := utils.GetPodGroupLabels(waitingPod.GetPod()) //nolint:errcheck // Error ignored intentionally
 			if waitingPodGroupName == podGroupName {
 				klog.V(4).Infof("Unreserve: rejecting pod %s/%s", p.Namespace, waitingPod.GetPod().Name)
 				waitingPod.Reject(cs.Name(), "pod group member failed")

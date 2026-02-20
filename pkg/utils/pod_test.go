@@ -157,6 +157,6 @@ func BenchmarkGetPodGroupLabels(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		_, _, _ = GetPodGroupLabels(pod)
+		_, _, _ = GetPodGroupLabels(pod) //nolint:errcheck // Benchmark intentionally ignores errors
 	}
 }

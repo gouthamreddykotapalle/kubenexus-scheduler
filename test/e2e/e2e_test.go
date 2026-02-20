@@ -112,7 +112,7 @@ func TestE2EGangScheduling(t *testing.T) {
 	if _, err := clientset.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{}); err != nil {
 		t.Fatalf("Failed to create namespace: %v", err)
 	}
-	defer func() { _ = clientset.CoreV1().Namespaces().Delete(ctx, namespace, metav1.DeleteOptions{}) }()
+	defer func() { _ = clientset.CoreV1().Namespaces().Delete(ctx, namespace, metav1.DeleteOptions{}) }() //nolint:errcheck // Cleanup errors are intentionally ignored
 
 	// Create a job with gang scheduling
 	job := makeGangJob("distributed-training", namespace, 4)
@@ -178,7 +178,7 @@ func TestE2EHybridWorkloads(t *testing.T) {
 	if _, err := clientset.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{}); err != nil {
 		t.Fatalf("Failed to create namespace: %v", err)
 	}
-	defer func() { _ = clientset.CoreV1().Namespaces().Delete(ctx, namespace, metav1.DeleteOptions{}) }()
+	defer func() { _ = clientset.CoreV1().Namespaces().Delete(ctx, namespace, metav1.DeleteOptions{}) }() //nolint:errcheck // Cleanup errors are intentionally ignored
 
 	// Create service pods (should spread)
 	t.Logf("Creating service pods...")
@@ -209,7 +209,7 @@ func createKindCluster() error {
 
 func cleanupKindCluster() {
 	cmd := exec.Command("kind", "delete", "cluster", "--name", "kubenexus-test")
-	_ = cmd.Run() // Explicitly ignore errors during cleanup
+	_ = cmd.Run() //nolint:errcheck // Cleanup errors are intentionally ignored
 }
 
 func setupClient() {
