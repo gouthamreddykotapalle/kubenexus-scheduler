@@ -1,13 +1,8 @@
-version: 2
-
 run:
   timeout: 5m
   tests: true
   build-tags:
     - integration
-  skip-dirs:
-    - _output
-    - vendor
   modules-download-mode: readonly
 
 linters:
@@ -28,6 +23,9 @@ linters-settings:
     checks: ["all"]
 
 issues:
+  exclude-dirs:
+    - _output
+    - vendor
   exclude-rules:
     # Exclude some linters from running on tests files
     - path: _test\.go
