@@ -4,7 +4,7 @@ featureGates:
   "DynamicResourceAllocation": true
 nodes:
 - role: control-plane
-  image: kindest/node:v1.32.0
+  image: kindest/node:v1.35.1
   kubeadmConfigPatches:
   - |
     kind: ClusterConfiguration
@@ -19,7 +19,7 @@ nodes:
       extraArgs:
         feature-gates: "DynamicResourceAllocation=true"
 - role: worker
-  image: kindest/node:v1.32.0
+  image: kindest/node:v1.35.1
   kubeadmConfigPatches:
   - |
     kind: JoinConfiguration
@@ -27,7 +27,7 @@ nodes:
       kubeletExtraArgs:
         feature-gates: "DynamicResourceAllocation=true"
 - role: worker
-  image: kindest/node:v1.32.0
+  image: kindest/node:v1.35.1
   kubeadmConfigPatches:
   - |
     kind: JoinConfiguration
