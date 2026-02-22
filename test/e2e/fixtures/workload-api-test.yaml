@@ -1,0 +1,77 @@
+---
+# Test Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: workload-test
+---
+# K8s 1.35+ Native Workload API for gang scheduling
+# NOTE: This requires Kueue to be installed for full functionality
+# Install: kubectl apply --server-side -f https://github.com/kubernetes-sigs/kueue/releases/download/v0.10.0/manifests.yaml
+# For production use without Kueue, use the label-based approach (see gang-label-test.yaml)
+apiVersion: scheduling.k8s.io/v1alpha1
+kind: Workload
+metadata:
+  name: test-workload
+  namespace: workload-test
+spec:
+  podSets:
+  - name: workers
+    count: 3
+---
+# Pod 1 - part of the gang
+apiVersion: v1
+kind: Pod
+metadata:
+  name: worker-1
+  namespace: workload-test
+  labels:
+    scheduling.k8s.io/workload: test-workload
+    scheduling.k8s.io/podset: workers
+spec:
+  schedulerName: kubenexus-scheduler
+  containers:
+  - name: worker
+    image: nginx:latest
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+---
+# Pod 2 - part of the gang
+apiVersion: v1
+kind: Pod
+metadata:
+  name: worker-2
+  namespace: workload-test
+  labels:
+    scheduling.k8s.io/workload: test-workload
+    scheduling.k8s.io/podset: workers
+spec:
+  schedulerName: kubenexus-scheduler
+  containers:
+  - name: worker
+    image: nginx:latest
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+---
+# Pod 3 - part of the gang
+apiVersion: v1
+kind: Pod
+metadata:
+  name: worker-3
+  namespace: workload-test
+  labels:
+    scheduling.k8s.io/workload: test-workload
+    scheduling.k8s.io/podset: workers
+spec:
+  schedulerName: kubenexus-scheduler
+  containers:
+  - name: worker
+    image: nginx:latest
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi

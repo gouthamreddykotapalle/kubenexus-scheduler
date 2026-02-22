@@ -38,9 +38,9 @@ func TestScoreExtensions(t *testing.T) {
 
 func TestConstants(t *testing.T) {
 	tests := []struct {
-		name     string
-		got      interface{}
-		want     interface{}
+		name string
+		got  interface{}
+		want interface{}
 	}{
 		{
 			name: "Name",

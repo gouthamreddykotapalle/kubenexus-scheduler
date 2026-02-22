@@ -131,7 +131,7 @@ spec:
         image: kubenexus-scheduler:latest
         imagePullPolicy: IfNotPresent
         command:
-          - /opt/kubenexus-scheduler
+          - /kubenexus-scheduler
           - --config=/etc/kubenexus/config.yaml
           - --v=4
         volumeMounts:

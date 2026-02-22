@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package topologyspread implements zone-aware pod spreading for high availability.
 package topologyspread
 
 import (

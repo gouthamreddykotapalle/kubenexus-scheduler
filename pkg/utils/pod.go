@@ -33,11 +33,11 @@ const (
 	PodGroupNameLabel = "pod-group.scheduling.kubenexus.io/name"
 	// PodGroupMinAvailableLabel is the label key for min available pods (KubeNexus)
 	PodGroupMinAvailableLabel = "pod-group.scheduling.kubenexus.io/min-available"
-	
+
 	// Legacy labels for backward compatibility
 	LegacyPodGroupNameLabel         = "pod-group.scheduling.sigs.k8s.io/name"
 	LegacyPodGroupMinAvailableLabel = "pod-group.scheduling.sigs.k8s.io/min-available"
-	
+
 	// Native K8s 1.35+ Workload labels
 	NativeWorkloadNameLabel = "scheduling.k8s.io/workload-name"
 	NativePodGroupLabel     = "scheduling.k8s.io/pod-group"
@@ -81,10 +81,10 @@ func GetPodGroupLabels(pod *v1.Pod) (name string, minAvailable int, err error) {
 
 // PodGroupInfo contains information about a pod group from either labels or native K8s Workload CRD
 type PodGroupInfo struct {
-	Name         string
-	MinMember    int
+	Name            string
+	MinMember       int
 	FromWorkloadCRD bool // true if from native K8s 1.35+ Workload CRD
-	TimeoutSeconds int32
+	TimeoutSeconds  int32
 }
 
 // GetPodGroupInfo extracts pod group information from either:
@@ -125,7 +125,7 @@ func GetWorkloadPodGroupInfo(ctx context.Context, pod *v1.Pod, dynamicClient dyn
 	// Check if pod has the native workload labels
 	workloadName := pod.Labels[NativeWorkloadNameLabel]
 	podGroupName := pod.Labels[NativePodGroupLabel]
-	
+
 	if workloadName == "" || podGroupName == "" {
 		return nil, nil // Pod doesn't belong to a native Workload
 	}
@@ -235,7 +235,7 @@ func getNestedInt64(obj map[string]interface{}, key string) (int64, bool, error)
 	if !found {
 		return 0, false, nil
 	}
-	
+
 	switch v := val.(type) {
 	case int64:
 		return v, true, nil

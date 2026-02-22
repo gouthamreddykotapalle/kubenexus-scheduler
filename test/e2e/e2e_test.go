@@ -300,7 +300,7 @@ func waitForSchedulerReady() error {
 		for _, pod := range pods.Items {
 			// Print detailed pod status for debugging
 			fmt.Printf("Scheduler pod %s: Phase=%s, Ready=%v\n", pod.Name, pod.Status.Phase, isPodReady(pod))
-			
+
 			// Print container statuses
 			for _, cs := range pod.Status.ContainerStatuses {
 				if cs.State.Waiting != nil {
@@ -310,7 +310,7 @@ func waitForSchedulerReady() error {
 					fmt.Printf("  Container %s: Terminated - %s (exit %d): %s\n", cs.Name, cs.State.Terminated.Reason, cs.State.Terminated.ExitCode, cs.State.Terminated.Message)
 				}
 			}
-			
+
 			if pod.Status.Phase == v1.PodRunning && isPodReady(pod) {
 				fmt.Println("Scheduler is ready!")
 				return true, nil
