@@ -27,6 +27,15 @@ fi
 echo "✓ Prerequisites met"
 echo ""
 
+# Preload busybox image to avoid TLS certificate issues
+echo "Preloading busybox:1.36 image..."
+if ! docker images | grep -q "busybox.*1.36"; then
+  docker pull busybox:1.36
+fi
+kind load docker-image busybox:1.36 --name "$CLUSTER_NAME" 2>/dev/null || true
+echo "✓ Image preloaded"
+echo ""
+
 # Show available GPU resources
 echo "Available GPU ResourceSlices:"
 kubectl get resourceslice
