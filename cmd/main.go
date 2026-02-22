@@ -14,7 +14,7 @@ import (
 
 func main() {
 	klog.InfoS("KubeNexus Scheduler starting", "version", "v0.1.0")
-	
+
 	command := app.NewSchedulerCommand(
 		app.WithPlugin(coscheduling.Name, coscheduling.New),
 		app.WithPlugin(resourcereservation.Name, resourcereservation.New),

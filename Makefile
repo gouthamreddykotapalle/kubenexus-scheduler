@@ -13,38 +13,6 @@ generate:
 	@echo "Generating code..."
 	go run sigs.k8s.io/controller-tools/cmd/controller-gen@latest object:headerFile="hack/boilerplate.go.txt" paths="./pkg/apis/..."
 
-.PHONY: fmt
-fmt:
-	@echo "Formatting code..."
-	gofmt -w -s ./cmd ./pkg ./test
-	@echo "✅ Code formatted"
-
-.PHONY: lint
-lint:
-	@echo "Running linters..."
-	@which golangci-lint > /dev/null || (which $$(go env GOPATH)/bin/golangci-lint > /dev/null) || (echo "❌ golangci-lint not found. Install it with: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $$(go env GOPATH)/bin latest" && exit 1)
-	@if which golangci-lint > /dev/null 2>&1; then \
-		golangci-lint run --timeout=5m; \
-	else \
-		$$(go env GOPATH)/bin/golangci-lint run --timeout=5m; \
-	fi
-	@echo "✅ Linting passed"
-
-.PHONY: lint-fix
-lint-fix:
-	@echo "Running linters with auto-fix..."
-	@which golangci-lint > /dev/null || (which $$(go env GOPATH)/bin/golangci-lint > /dev/null) || (echo "❌ golangci-lint not found. Install it with: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $$(go env GOPATH)/bin latest" && exit 1)
-	@if which golangci-lint > /dev/null 2>&1; then \
-		golangci-lint run --timeout=5m --fix; \
-	else \
-		$$(go env GOPATH)/bin/golangci-lint run --timeout=5m --fix; \
-	fi
-	@echo "✅ Linting and auto-fix completed"
-
-.PHONY: pre-commit
-pre-commit: fmt lint test
-	@echo "✅ Pre-commit checks passed! Ready to commit."
-
 .PHONY: build
 build:
 	@echo "Building $(BINARY_NAME)..."
@@ -52,14 +20,14 @@ build:
 
 .PHONY: test
 test:
-	@echo "Running unit tests..."
+	@echo "Running tests..."
 	$(BUILDENVVAR) go test -v ./pkg/apis/... ./pkg/plugins/coscheduling/... ./pkg/plugins/resourcereservation/... ./pkg/workload/... ./pkg/utils/... ./pkg/scheduler/...
 
-.PHONY: test-e2e
-test-e2e:
-	@echo "Running E2E tests..."
-	go test -v ./test/e2e/... -timeout 30m
-	@echo "✅ E2E tests passed"
+.PHONY: test-coverage
+test-coverage:
+	@echo "Running tests with coverage..."
+	$(BUILDENVVAR) go test -coverprofile=coverage.out ./pkg/apis/... ./pkg/plugins/coscheduling/... ./pkg/plugins/resourcereservation/... ./pkg/workload/... ./pkg/utils/... ./pkg/scheduler/...
+	$(BUILDENVVAR) go tool cover -html=coverage.out -o coverage.html
 
 .PHONY: docker-build
 docker-build:
