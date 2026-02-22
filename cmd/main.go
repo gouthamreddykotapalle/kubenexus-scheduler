@@ -11,6 +11,7 @@ import (
 	"sigs.k8s.io/scheduler-plugins/pkg/plugins/coscheduling"
 	"sigs.k8s.io/scheduler-plugins/pkg/plugins/numatopology"
 	"sigs.k8s.io/scheduler-plugins/pkg/plugins/preemption"
+	"sigs.k8s.io/scheduler-plugins/pkg/plugins/resourcefragmentation"
 	"sigs.k8s.io/scheduler-plugins/pkg/plugins/resourcereservation"
 	"sigs.k8s.io/scheduler-plugins/pkg/plugins/topologyspread"
 	"sigs.k8s.io/scheduler-plugins/pkg/plugins/workloadaware"
@@ -28,6 +29,7 @@ func main() {
 		app.WithPlugin(workloadaware.Name, workloadaware.New),
 		app.WithPlugin(topologyspread.TopologyScoringName, topologyspread.NewTopologySpreadScore),
 		app.WithPlugin(backfill.Name, backfill.New),
+		app.WithPlugin(resourcefragmentation.Name, resourcefragmentation.New),
 
 		// Advanced plugins
 		app.WithPlugin(numatopology.Name, numatopology.New),
