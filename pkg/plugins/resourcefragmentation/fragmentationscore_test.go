@@ -17,10 +17,23 @@ limitations under the License.
 package resourcefragmentation
 
 import (
+	"context"
 	"testing"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	fwk "k8s.io/kube-scheduler/framework"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
+	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
+
+	testutil "sigs.k8s.io/scheduler-plugins/test/util"
+)
+
+const (
+	// Test constants for GPU topology
+	TopologyNVSwitch = "nvswitch"
+	TopologyNVLink   = "nvlink"
+	TopologyPCIe     = "pcie"
 )
 
 func TestName(t *testing.T) {
@@ -134,3 +147,282 @@ func TestGetGPURequest(t *testing.T) {
 		})
 	}
 }
+
+// TestScoreWithFramework tests Score() method with proper framework mocks
+func TestScoreWithFramework(t *testing.T) {
+	// Create nodes with different GPU topologies
+	nodes := []*v1.Node{
+		// Large pristine island (8 GPUs, NVSwitch)
+		testutil.MakeNode("nvswitch-node-1", map[string]string{
+			LabelGPUTopology: "nvswitch",
+		}, v1.ResourceList{
+			ResourceGPU: resource.MustParse("8"),
+		}),
+		// Medium island (4 GPUs, NVLink)
+		testutil.MakeNode("nvlink-node-1", map[string]string{
+			LabelGPUTopology: "nvlink",
+		}, v1.ResourceList{
+			ResourceGPU: resource.MustParse("4"),
+		}),
+		// Small island (2 GPUs, PCIe)
+		testutil.MakeNode("pcie-node-1", map[string]string{
+			LabelGPUTopology: "pcie",
+		}, v1.ResourceList{
+			ResourceGPU: resource.MustParse("2"),
+		}),
+		// Partially allocated large island
+		testutil.MakeNode("nvswitch-node-2", map[string]string{
+			LabelGPUTopology: "nvswitch",
+		}, v1.ResourceList{
+			ResourceGPU: resource.MustParse("8"),
+		}),
+	}
+
+	// Pod already scheduled on nvswitch-node-2 (consumes 2 GPUs)
+	existingPods := []*v1.Pod{
+		testutil.MakePod("existing-pod", "default", "nvswitch-node-2",
+			v1.ResourceList{ResourceGPU: resource.MustParse("2")},
+			nil, nil),
+	}
+
+	tests := []struct {
+		name           string
+		pod            *v1.Pod
+		expectedScores map[string]int64
+		description    string
+	}{
+		{
+			name: "Small request (2 GPUs) - should prefer partially used island",
+			pod: testutil.MakePod("small-pod", "default", "",
+				v1.ResourceList{ResourceGPU: resource.MustParse("2")},
+				nil, nil),
+			expectedScores: map[string]int64{
+				"nvswitch-node-1": 50,  // Pristine large island penalty
+				"nvlink-node-1":   50,  // Pristine medium island penalty
+				"pcie-node-1":     90,  // Perfect fit on small island
+				"nvswitch-node-2": 100, // Already used, good fit
+			},
+			description: "Small requests avoid pristine islands",
+		},
+		{
+			name: "Medium request (4 GPUs) - should prefer exact fit",
+			pod: testutil.MakePod("medium-pod", "default", "",
+				v1.ResourceList{ResourceGPU: resource.MustParse("4")},
+				nil, nil),
+			expectedScores: map[string]int64{
+				"nvswitch-node-1": 70,  // Can fit but not perfect
+				"nvlink-node-1":   90,  // Perfect fit bonus
+				"pcie-node-1":     0,   // Too small
+				"nvswitch-node-2": 80,  // Can fit, partially used
+			},
+			description: "Medium requests get perfect fit bonus",
+		},
+		{
+			name: "Large request (8 GPUs) - needs large island",
+			pod: testutil.MakePod("large-pod", "default", "",
+				v1.ResourceList{ResourceGPU: resource.MustParse("8")},
+				nil, nil),
+			expectedScores: map[string]int64{
+				"nvswitch-node-1": 100, // Perfect fit, premium topology
+				"nvlink-node-1":   0,   // Too small
+				"pcie-node-1":     0,   // Too small
+				"nvswitch-node-2": 0,   // Already has 2 GPU allocated, can't fit 8
+			},
+			description: "Large requests prioritize premium topology",
+		},
+		{
+			name: "No GPU request - neutral scores",
+			pod: testutil.MakePod("cpu-pod", "default", "",
+				v1.ResourceList{v1.ResourceCPU: resource.MustParse("4")},
+				nil, nil),
+			expectedScores: map[string]int64{
+				"nvswitch-node-1": 100,
+				"nvlink-node-1":   100,
+				"pcie-node-1":     100,
+				"nvswitch-node-2": 100,
+			},
+			description: "CPU-only pods get neutral scores",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create framework with shared lister
+			snapshot := testutil.NewFakeSharedLister(existingPods, nodes)
+			fh, err := testutil.NewTestFramework(nil,
+				frameworkruntime.WithSnapshotSharedLister(snapshot))
+			if err != nil {
+				t.Fatalf("Failed to create framework: %v", err)
+			}
+
+			// Create plugin
+			plugin, err := New(context.Background(), nil, fh)
+			if err != nil {
+				t.Fatalf("Failed to create plugin: %v", err)
+			}
+
+			scorePlugin := plugin.(fwk.ScorePlugin)
+			state := framework.NewCycleState()
+
+			// Score each node
+			for _, node := range nodes {
+				nodeInfo, err := snapshot.NodeInfos().Get(node.Name)
+				if err != nil {
+					t.Fatalf("Failed to get NodeInfo for %s: %v", node.Name, err)
+				}
+
+				score, status := scorePlugin.Score(context.Background(), state, tt.pod, nodeInfo)
+				if !status.IsSuccess() {
+					t.Errorf("Score failed for node %s: %v", node.Name, status.AsError())
+				}
+
+				expectedScore := tt.expectedScores[node.Name]
+				if score != expectedScore {
+					t.Errorf("%s - Node %s: expected score %d, got %d",
+						tt.description, node.Name, expectedScore, score)
+				}
+			}
+		})
+	}
+}
+
+// TestDetectGPUIsland tests island detection logic
+func TestDetectGPUIsland(t *testing.T) {
+	tests := []struct {
+		name             string
+		node             *v1.Node
+		expectedTotalGPUs int
+		expectedTopology string
+		expectedQuality  int
+	}{
+		{
+			name: "NVSwitch large island",
+			node: testutil.MakeNode("nvswitch-8gpu", map[string]string{
+				LabelGPUTopology: "nvswitch",
+			}, v1.ResourceList{
+				ResourceGPU: resource.MustParse("8"),
+			}),
+			expectedTotalGPUs: 8,
+			expectedTopology: "nvswitch",
+			expectedQuality:  IslandQualityNVSwitch,
+		},
+		{
+			name: "NVLink medium island",
+			node: testutil.MakeNode("nvlink-4gpu", map[string]string{
+				LabelGPUTopology: "nvlink",
+			}, v1.ResourceList{
+				ResourceGPU: resource.MustParse("4"),
+			}),
+			expectedTotalGPUs: 4,
+			expectedTopology: "nvlink",
+			expectedQuality:  IslandQualityNVLink,
+		},
+		{
+			name: "PCIe small island",
+			node: testutil.MakeNode("pcie-2gpu", map[string]string{
+				LabelGPUTopology: "pcie",
+			}, v1.ResourceList{
+				ResourceGPU: resource.MustParse("2"),
+			}),
+			expectedTotalGPUs: 2,
+			expectedTopology: "pcie",
+			expectedQuality:  IslandQualityPCIe,
+		},
+		{
+			name: "Unknown topology defaults to unknown",
+			node: testutil.MakeNode("unknown-gpu", map[string]string{},
+				v1.ResourceList{
+					ResourceGPU: resource.MustParse("4"),
+				}),
+			expectedTotalGPUs: 4,
+			expectedTopology: "unknown",
+			expectedQuality:  IslandQualityUnknown,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create plugin with fake pod lister
+			plugin := &ResourceFragmentationScore{
+				podLister: testutil.NewFakePodLister(nil),
+			}
+			
+			// Create NodeInfo from node
+			nodeInfo := framework.NewNodeInfo()
+			nodeInfo.SetNode(tt.node)
+			
+			island := plugin.detectGPUIsland(nodeInfo)
+			
+			if island == nil {
+				t.Fatal("Expected non-nil GPUIsland")
+			}
+
+			if island.TotalGPUs != tt.expectedTotalGPUs {
+				t.Errorf("Expected TotalGPUs=%d, got %d", tt.expectedTotalGPUs, island.TotalGPUs)
+			}
+			if island.Topology != tt.expectedTopology {
+				t.Errorf("Expected Topology=%s, got %s", tt.expectedTopology, island.Topology)
+			}
+			if island.Quality != tt.expectedQuality {
+				t.Errorf("Expected Quality=%d, got %d", tt.expectedQuality, island.Quality)
+			}
+		})
+	}
+}
+
+// TestScoreTopologyPreference tests topology tier scoring
+func TestScoreTopologyPreference(t *testing.T) {
+	nodes := []*v1.Node{
+		testutil.MakeNode("nvswitch-node", map[string]string{
+			LabelGPUTopology: "nvswitch",
+		}, v1.ResourceList{ResourceGPU: resource.MustParse("8")}),
+		testutil.MakeNode("nvlink-node", map[string]string{
+			LabelGPUTopology: "nvlink",
+		}, v1.ResourceList{ResourceGPU: resource.MustParse("4")}),
+		testutil.MakeNode("pcie-node", map[string]string{
+			LabelGPUTopology: "pcie",
+		}, v1.ResourceList{ResourceGPU: resource.MustParse("2")}),
+	}
+
+	// Large multi-GPU workload requesting 8 GPUs
+	pod := testutil.MakePod("ml-training", "default", "",
+		v1.ResourceList{ResourceGPU: resource.MustParse("8")},
+		nil, nil)
+
+	snapshot := testutil.NewFakeSharedLister(nil, nodes)
+	fh, err := testutil.NewTestFramework(nil,
+		frameworkruntime.WithSnapshotSharedLister(snapshot))
+	if err != nil {
+		t.Fatalf("Failed to create framework: %v", err)
+	}
+
+	plugin, err := New(context.Background(), nil, fh)
+	if err != nil {
+		t.Fatalf("Failed to create plugin: %v", err)
+	}
+
+	scorePlugin := plugin.(fwk.ScorePlugin)
+	state := framework.NewCycleState()
+
+	// NVSwitch should score highest for large workloads
+	nvswitchInfo, _ := snapshot.NodeInfos().Get("nvswitch-node")
+	nvswitchScore, _ := scorePlugin.Score(context.Background(), state, pod, nvswitchInfo)
+
+	// NVLink and PCIe should be filtered out (can't fit 8 GPUs)
+	nvlinkInfo, _ := snapshot.NodeInfos().Get("nvlink-node")
+	nvlinkScore, _ := scorePlugin.Score(context.Background(), state, pod, nvlinkInfo)
+
+	pcieInfo, _ := snapshot.NodeInfos().Get("pcie-node")
+	pcieScore, _ := scorePlugin.Score(context.Background(), state, pod, pcieInfo)
+
+	if nvswitchScore != 100 {
+		t.Errorf("NVSwitch node should score 100 for 8-GPU workload, got %d", nvswitchScore)
+	}
+	if nvlinkScore != 0 {
+		t.Errorf("NVLink node should score 0 (too small), got %d", nvlinkScore)
+	}
+	if pcieScore != 0 {
+		t.Errorf("PCIe node should score 0 (too small), got %d", pcieScore)
+	}
+}
+

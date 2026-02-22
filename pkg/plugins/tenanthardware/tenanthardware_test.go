@@ -17,10 +17,23 @@ limitations under the License.
 package tenanthardware
 
 import (
+	"context"
 	"testing"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	fwk "k8s.io/kube-scheduler/framework"
+	"k8s.io/kubernetes/pkg/scheduler/framework"
+	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
+
+	testutil "sigs.k8s.io/scheduler-plugins/test/util"
+)
+
+const (
+	// Test constants
+	ResourceGPU             = v1.ResourceName("nvidia.com/gpu")
+	AnnotationPriorityTier  = "scheduler.kubenexus.io/priority-tier"
 )
 
 func TestName(t *testing.T) {
@@ -41,10 +54,10 @@ func TestGetTenantPriority(t *testing.T) {
 	plugin := &TenantHardwareAffinity{}
 
 	tests := []struct {
-		name              string
-		priorityClassName string
-		annotations       map[string]string
-		expectedPriority  string
+		name                string
+		priorityClassName   string
+		annotations         map[string]string
+		expectedPriority    string
 	}{
 		{
 			name:              "High priority class",
@@ -173,11 +186,11 @@ func TestCalculateAffinityScore(t *testing.T) {
 	plugin := &TenantHardwareAffinity{}
 
 	tests := []struct {
-		name           string
-		tenantPriority string
-		hardwareTier   string
-		expectedScore  int64
-		description    string
+		name            string
+		tenantPriority  string
+		hardwareTier    string
+		expectedScore   int64
+		description     string
 	}{
 		{
 			name:           "High priority on premium hardware - perfect match",
@@ -336,5 +349,190 @@ func TestGetHardwareTier(t *testing.T) {
 				t.Errorf("Expected tier %s, got %s", tt.expectedTier, tier)
 			}
 		})
+	}
+}
+// TestScoreWithFramework tests Score() method with proper framework.Handle
+func TestScoreWithFramework(t *testing.T) {
+	// Create test nodes with different hardware tiers
+	nodes := []*v1.Node{
+		testutil.MakeNode("premium-node", map[string]string{
+			LabelHardwareTier: TierPremium,
+			LabelGPUModel:     "H100",
+		}, v1.ResourceList{
+			v1.ResourceCPU:    resource.MustParse("64"),
+			v1.ResourceMemory: resource.MustParse("512Gi"),
+			ResourceGPU:       resource.MustParse("8"),
+		}),
+		testutil.MakeNode("standard-node", map[string]string{
+			LabelHardwareTier: TierStandard,
+			LabelGPUModel:     "A100",
+		}, v1.ResourceList{
+			v1.ResourceCPU:    resource.MustParse("48"),
+			v1.ResourceMemory: resource.MustParse("384Gi"),
+			ResourceGPU:       resource.MustParse("8"),
+		}),
+		testutil.MakeNode("economy-node", map[string]string{
+			LabelHardwareTier: TierEconomy,
+			LabelGPUModel:     "T4",
+		}, v1.ResourceList{
+			v1.ResourceCPU:    resource.MustParse("32"),
+			v1.ResourceMemory: resource.MustParse("256Gi"),
+			ResourceGPU:       resource.MustParse("4"),
+		}),
+	}
+
+	tests := []struct {
+		name           string
+		pod            *v1.Pod
+		expectedScores map[string]int64
+	}{
+		{
+			name: "High priority pod prefers premium hardware",
+			pod: testutil.MakePod("high-priority-pod", "default", "", 
+				v1.ResourceList{ResourceGPU: resource.MustParse("2")},
+				nil,
+				map[string]string{AnnotationPriorityTier: "high-priority"}),
+			expectedScores: map[string]int64{
+				"premium-node":  ScorePerfectMatch,     // 100
+				"standard-node": ScoreAcceptableMatch,  // 70
+				"economy-node":  ScoreAcceptableMatch - 10, // 60
+			},
+		},
+		{
+			name: "Medium priority pod prefers standard hardware",
+			pod: testutil.MakePod("medium-priority-pod", "default", "",
+				v1.ResourceList{ResourceGPU: resource.MustParse("2")},
+				nil,
+				map[string]string{AnnotationPriorityTier: "medium-priority"}),
+			expectedScores: map[string]int64{
+				"premium-node":  ScoreMismatchPenalty,  // 20
+				"standard-node": ScorePerfectMatch,     // 100
+				"economy-node":  ScoreAcceptableMatch,  // 70
+			},
+		},
+		{
+			name: "Low priority pod prefers economy hardware",
+			pod: testutil.MakePod("low-priority-pod", "default", "",
+				v1.ResourceList{ResourceGPU: resource.MustParse("1")},
+				nil,
+				map[string]string{AnnotationPriorityTier: "low-priority"}),
+			expectedScores: map[string]int64{
+				"premium-node":  ScoreMismatchPenalty, // 20
+				"standard-node": ScoreMismatchPenalty, // 20
+				"economy-node":  ScorePerfectMatch,    // 100
+			},
+		},
+		{
+			name: "Pod with priority class name",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "priority-class-pod",
+					Namespace: "default",
+				},
+				Spec: v1.PodSpec{
+					PriorityClassName: "high-priority",
+					Containers: []v1.Container{{
+						Resources: v1.ResourceRequirements{
+							Requests: v1.ResourceList{ResourceGPU: resource.MustParse("2")},
+						},
+					}},
+				},
+			},
+			expectedScores: map[string]int64{
+				"premium-node":  ScorePerfectMatch,     // 100
+				"standard-node": ScoreAcceptableMatch,  // 70
+				"economy-node":  ScoreAcceptableMatch - 10, // 60
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create framework
+			fh, err := testutil.NewTestFramework(nil, 
+				frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(nil, nodes)))
+			if err != nil {
+				t.Fatalf("Failed to create framework: %v", err)
+			}
+
+			// Create plugin
+			plugin, err := New(context.Background(), nil, fh)
+			if err != nil {
+				t.Fatalf("Failed to create plugin: %v", err)
+			}
+
+			scorePlugin, ok := plugin.(fwk.ScorePlugin)
+			if !ok {
+				t.Fatal("Plugin does not implement ScorePlugin interface")
+			}
+
+			state := framework.NewCycleState()
+
+			// Score each node
+			for _, node := range nodes {
+				nodeInfo, err := fh.SnapshotSharedLister().NodeInfos().Get(node.Name)
+				if err != nil {
+					t.Fatalf("Failed to get NodeInfo for %s: %v", node.Name, err)
+				}
+
+				score, status := scorePlugin.Score(context.Background(), state, tt.pod, nodeInfo)
+				if !status.IsSuccess() {
+					t.Errorf("Score failed for node %s: %v", node.Name, status.AsError())
+				}
+
+				expectedScore := tt.expectedScores[node.Name]
+				if score != expectedScore {
+					t.Errorf("Node %s: expected score %d, got %d", node.Name, expectedScore, score)
+				}
+			}
+		})
+	}
+}
+
+// TestScoreWithNoGPUNodes tests scoring behavior on nodes without GPUs
+func TestScoreWithNoGPUNodes(t *testing.T) {
+	nodes := []*v1.Node{
+		testutil.MakeNode("cpu-node-1", map[string]string{
+			LabelHardwareTier: TierStandard,
+		}, v1.ResourceList{
+			v1.ResourceCPU:    resource.MustParse("64"),
+			v1.ResourceMemory: resource.MustParse("512Gi"),
+		}),
+		testutil.MakeNode("cpu-node-2", map[string]string{}, v1.ResourceList{
+			v1.ResourceCPU:    resource.MustParse("32"),
+			v1.ResourceMemory: resource.MustParse("256Gi"),
+		}),
+	}
+
+	pod := testutil.MakePod("cpu-pod", "default", "",
+		v1.ResourceList{v1.ResourceCPU: resource.MustParse("4")},
+		nil, nil)
+
+	fh, err := testutil.NewTestFramework(nil,
+		frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(nil, nodes)))
+	if err != nil {
+		t.Fatalf("Failed to create framework: %v", err)
+	}
+
+	plugin, err := New(context.Background(), nil, fh)
+	if err != nil {
+		t.Fatalf("Failed to create plugin: %v", err)
+	}
+
+	scorePlugin := plugin.(fwk.ScorePlugin)
+	state := framework.NewCycleState()
+
+	for _, node := range nodes {
+		nodeInfo, _ := fh.SnapshotSharedLister().NodeInfos().Get(node.Name)
+		score, status := scorePlugin.Score(context.Background(), state, pod, nodeInfo)
+		if !status.IsSuccess() {
+			t.Errorf("Score failed for node %s: %v", node.Name, status.AsError())
+		}
+
+		// Without hardware tier info on some nodes, should get neutral score
+		if node.Name == "cpu-node-2" && score != ScoreNoHardwareInfo {
+			t.Errorf("Node %s: expected neutral score %d, got %d", 
+				node.Name, ScoreNoHardwareInfo, score)
+		}
 	}
 }
