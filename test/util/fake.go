@@ -133,6 +133,7 @@ func NewTestFrameworkWithPods(pods []*v1.Pod, nodes []*v1.Node, registeredPlugin
 	for _, node := range nodes {
 		objects = append(objects, node)
 	}
+	//nolint:staticcheck // SA1019: NewSimpleClientset acceptable in test utilities
 	cs := clientsetfake.NewSimpleClientset(objects...)
 
 	informerFactory := informers.NewSharedInformerFactory(cs, 0)
@@ -161,6 +162,7 @@ func NewTestFramework(registeredPlugins []tf.RegisterPluginFunc, profiles ...fra
 		tf.RegisterQueueSortPlugin(queuesort.Name, queuesort.New),
 	}, registeredPlugins...)
 
+	//nolint:staticcheck // SA1019: NewSimpleClientset acceptable in test utilities
 	cs := clientsetfake.NewSimpleClientset()
 	informerFactory := informers.NewSharedInformerFactory(cs, 0)
 
