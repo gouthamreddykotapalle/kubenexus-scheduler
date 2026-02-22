@@ -195,10 +195,10 @@ func TestScoreWithFramework(t *testing.T) {
 				v1.ResourceList{ResourceGPU: resource.MustParse("2")},
 				nil, nil),
 			expectedScores: map[string]int64{
-				"nvswitch-node-1": 0,   // Pristine large island gets maximum penalty
-				"nvlink-node-1":   0,   // Pristine medium island gets penalty  
-				"pcie-node-1":     90,  // Perfect fit on small island
-				"nvswitch-node-2": 96,  // Partially used node with CPU score
+				"nvswitch-node-1": 0,  // Pristine large island gets maximum penalty
+				"nvlink-node-1":   0,  // Pristine medium island gets penalty
+				"pcie-node-1":     90, // Perfect fit on small island
+				"nvswitch-node-2": 96, // Partially used node with CPU score
 			},
 			description: "Small requests avoid pristine islands",
 		},
@@ -208,10 +208,10 @@ func TestScoreWithFramework(t *testing.T) {
 				v1.ResourceList{ResourceGPU: resource.MustParse("4")},
 				nil, nil),
 			expectedScores: map[string]int64{
-				"nvswitch-node-1": 0,   // Pristine island penalty
-				"nvlink-node-1":   90,  // Perfect fit bonus
-				"pcie-node-1":     0,   // Too small
-				"nvswitch-node-2": 98,  // Partially used with CPU score
+				"nvswitch-node-1": 0,  // Pristine island penalty
+				"nvlink-node-1":   90, // Perfect fit bonus
+				"pcie-node-1":     0,  // Too small
+				"nvswitch-node-2": 98, // Partially used with CPU score
 			},
 			description: "Medium requests get perfect fit bonus",
 		},
@@ -221,10 +221,10 @@ func TestScoreWithFramework(t *testing.T) {
 				v1.ResourceList{ResourceGPU: resource.MustParse("8")},
 				nil, nil),
 			expectedScores: map[string]int64{
-				"nvswitch-node-1": 90,  // Perfect fit bonus
-				"nvlink-node-1":   0,   // Too small
-				"pcie-node-1":     0,   // Too small
-				"nvswitch-node-2": 25,  // Partially available (has 6 GPUs free)
+				"nvswitch-node-1": 90, // Perfect fit bonus
+				"nvlink-node-1":   0,  // Too small
+				"pcie-node-1":     0,  // Too small
+				"nvswitch-node-2": 25, // Partially available (has 6 GPUs free)
 			},
 			description: "Large requests prioritize premium topology",
 		},
@@ -280,11 +280,11 @@ func TestScoreWithFramework(t *testing.T) {
 // TestDetectGPUIsland tests island detection logic
 func TestDetectGPUIsland(t *testing.T) {
 	tests := []struct {
-		name             string
-		node             *v1.Node
+		name              string
+		node              *v1.Node
 		expectedTotalGPUs int
-		expectedTopology string
-		expectedQuality  int
+		expectedTopology  string
+		expectedQuality   int
 	}{
 		{
 			name: "NVSwitch large island",
@@ -294,8 +294,8 @@ func TestDetectGPUIsland(t *testing.T) {
 				ResourceGPU: resource.MustParse("8"),
 			}),
 			expectedTotalGPUs: 8,
-			expectedTopology: "nvswitch",
-			expectedQuality:  IslandQualityNVSwitch,
+			expectedTopology:  "nvswitch",
+			expectedQuality:   IslandQualityNVSwitch,
 		},
 		{
 			name: "NVLink medium island",
@@ -305,8 +305,8 @@ func TestDetectGPUIsland(t *testing.T) {
 				ResourceGPU: resource.MustParse("4"),
 			}),
 			expectedTotalGPUs: 4,
-			expectedTopology: "nvlink",
-			expectedQuality:  IslandQualityNVLink,
+			expectedTopology:  "nvlink",
+			expectedQuality:   IslandQualityNVLink,
 		},
 		{
 			name: "PCIe small island",
@@ -316,8 +316,8 @@ func TestDetectGPUIsland(t *testing.T) {
 				ResourceGPU: resource.MustParse("2"),
 			}),
 			expectedTotalGPUs: 2,
-			expectedTopology: "pcie",
-			expectedQuality:  IslandQualityPCIe,
+			expectedTopology:  "pcie",
+			expectedQuality:   IslandQualityPCIe,
 		},
 		{
 			name: "Unknown topology defaults to unknown",
@@ -326,8 +326,8 @@ func TestDetectGPUIsland(t *testing.T) {
 					ResourceGPU: resource.MustParse("4"),
 				}),
 			expectedTotalGPUs: 4,
-			expectedTopology: "unknown",
-			expectedQuality:  IslandQualityUnknown,
+			expectedTopology:  "unknown",
+			expectedQuality:   IslandQualityUnknown,
 		},
 	}
 
@@ -337,13 +337,13 @@ func TestDetectGPUIsland(t *testing.T) {
 			plugin := &ResourceFragmentationScore{
 				podLister: testutil.NewFakePodLister(nil),
 			}
-			
+
 			// Create NodeInfo from node
 			nodeInfo := framework.NewNodeInfo()
 			nodeInfo.SetNode(tt.node)
-			
+
 			island := plugin.detectGPUIsland(nodeInfo)
-			
+
 			if island == nil {
 				t.Fatal("Expected non-nil GPUIsland")
 			}
@@ -381,7 +381,7 @@ func TestScoreTopologyPreference(t *testing.T) {
 		nil, nil)
 
 	snapshot := testutil.NewFakeSharedLister(nil, nodes)
-	
+
 	// Create plugin directly with fake pod lister
 	plugin := &ResourceFragmentationScore{
 		handle:    nil,
@@ -413,4 +413,3 @@ func TestScoreTopologyPreference(t *testing.T) {
 		t.Errorf("PCIe node should score 0 (too small), got %d", pcieScore)
 	}
 }
-

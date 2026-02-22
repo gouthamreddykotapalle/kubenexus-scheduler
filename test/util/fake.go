@@ -132,12 +132,12 @@ func NewTestFrameworkWithPods(pods []*v1.Pod, nodes []*v1.Node, registeredPlugin
 		objects = append(objects, node)
 	}
 	cs := clientsetfake.NewSimpleClientset(objects...)
-	
+
 	informerFactory := informers.NewSharedInformerFactory(cs, 0)
 	stopCh := make(chan struct{})
 	informerFactory.Start(stopCh)
 	informerFactory.WaitForCacheSync(stopCh)
-	
+
 	// Give informer cache a moment to fully populate
 	time.Sleep(200 * time.Millisecond)
 
@@ -199,14 +199,14 @@ func (npm *nominator) AddNominatedPod(logger klog.Logger, pi fwk.PodInfo, nomina
 
 	// Always add the nominatedNodeName back to the pod.
 	nnn := nominatingInfo.NominatedNodeName
-	
+
 	// Convert interface to concrete type
 	concretePi, ok := pi.(*framework.PodInfo)
 	if !ok {
 		// Can't work with non-concrete PodInfo in test code
 		return
 	}
-	
+
 	pod := concretePi.Pod
 	if pod.Status.NominatedNodeName != nnn {
 		podCopy := pod.DeepCopy()

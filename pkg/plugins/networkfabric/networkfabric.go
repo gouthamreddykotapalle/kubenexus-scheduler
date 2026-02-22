@@ -21,7 +21,7 @@ limitations under the License.
 // communication between pods. When pods are scattered across different network domains
 // (racks, pods, availability zones), network performance degrades significantly:
 //   - Same rack (NVSwitch): ~300-600 GB/s GPU-GPU bandwidth
-//   - Cross-rack (InfiniBand/RoCE): ~100-200 GB/s bandwidth  
+//   - Cross-rack (InfiniBand/RoCE): ~100-200 GB/s bandwidth
 //   - Cross-AZ (backbone): ~10-25 GB/s bandwidth
 //   - Performance impact: 3-10x slowdown in collective operations (all-reduce)
 //
@@ -30,11 +30,11 @@ limitations under the License.
 // close together on the network, maximizing bandwidth and minimizing latency.
 //
 // NETWORK FABRIC TIERS (from best to worst):
-//   1. NVSwitch Fabric: GPU-to-GPU direct, 900 GB/s, <1μs latency (DGX SuperPods)
-//   2. NVLink Domain: GPU-to-GPU in single node, 600 GB/s, <2μs latency
-//   3. InfiniBand EDR/HDR: High-speed RDMA, 100-200 GB/s, <10μs latency
-//   4. RoCE v2 (100GbE): Ethernet-based RDMA, 12.5-25 GB/s, ~50μs latency  
-//   5. Standard Ethernet: 1-10 GbE, 125 MB - 1.25 GB/s, >100μs latency
+//  1. NVSwitch Fabric: GPU-to-GPU direct, 900 GB/s, <1μs latency (DGX SuperPods)
+//  2. NVLink Domain: GPU-to-GPU in single node, 600 GB/s, <2μs latency
+//  3. InfiniBand EDR/HDR: High-speed RDMA, 100-200 GB/s, <10μs latency
+//  4. RoCE v2 (100GbE): Ethernet-based RDMA, 12.5-25 GB/s, ~50μs latency
+//  5. Standard Ethernet: 1-10 GbE, 125 MB - 1.25 GB/s, >100μs latency
 //
 // SCORING STRATEGY:
 //   - Co-locate gang members in same network domain when possible
@@ -43,26 +43,29 @@ limitations under the License.
 //   - Balance with other constraints (GPU availability, NUMA, etc.)
 //
 // NODE LABELS (required for fabric detection):
-//   network.kubenexus.io/fabric-type: "nvswitch|nvlink|infiniband|roce|ethernet"
-//   network.kubenexus.io/fabric-id: "<unique-fabric-domain-id>"
-//   network.kubenexus.io/rack-id: "<rack-identifier>"
-//   network.kubenexus.io/az: "<availability-zone>"
+//
+//	network.kubenexus.io/fabric-type: "nvswitch|nvlink|infiniband|roce|ethernet"
+//	network.kubenexus.io/fabric-id: "<unique-fabric-domain-id>"
+//	network.kubenexus.io/rack-id: "<rack-identifier>"
+//	network.kubenexus.io/az: "<availability-zone>"
 //
 // POD ANNOTATIONS (optional overrides):
-//   scheduling.kubenexus.io/network-sensitive: "true|false"  # Boost scoring weight
-//   scheduling.kubenexus.io/min-fabric-tier: "nvswitch|infiniband|roce"  # Minimum required
-//   scheduling.kubenexus.io/co-locate: "strict|preferred|none"  # Gang locality requirement
+//
+//	scheduling.kubenexus.io/network-sensitive: "true|false"  # Boost scoring weight
+//	scheduling.kubenexus.io/min-fabric-tier: "nvswitch|infiniband|roce"  # Minimum required
+//	scheduling.kubenexus.io/co-locate: "strict|preferred|none"  # Gang locality requirement
 //
 // EXAMPLE TOPOLOGY:
-//   Rack A (NVSwitch Fabric "nsw-fabric-01"):
-//     Node 1, Node 2, Node 3, Node 4 (8 GPUs each) - 900 GB/s interconnect
-//   Rack B (InfiniBand "ib-fabric-02"):  
-//     Node 5, Node 6, Node 7, Node 8 (8 GPUs each) - 200 GB/s interconnect
 //
-//   Gang of 4 pods × 8 GPUs = 32 GPUs total
-//   ✅ GOOD: All in Rack A (NVSwitch, same fabric domain)
-//   ⚠️ OK: All in Rack B (InfiniBand, same fabric domain)
-//   ❌ BAD: 2 in Rack A, 2 in Rack B (cross-rack, mixed fabrics)
+//	Rack A (NVSwitch Fabric "nsw-fabric-01"):
+//	  Node 1, Node 2, Node 3, Node 4 (8 GPUs each) - 900 GB/s interconnect
+//	Rack B (InfiniBand "ib-fabric-02"):
+//	  Node 5, Node 6, Node 7, Node 8 (8 GPUs each) - 200 GB/s interconnect
+//
+//	Gang of 4 pods × 8 GPUs = 32 GPUs total
+//	✅ GOOD: All in Rack A (NVSwitch, same fabric domain)
+//	⚠️ OK: All in Rack B (InfiniBand, same fabric domain)
+//	❌ BAD: 2 in Rack A, 2 in Rack B (cross-rack, mixed fabrics)
 //
 // INTEGRATION WITH OTHER PLUGINS:
 //   - Works with Coscheduling plugin for gang awareness
@@ -178,7 +181,7 @@ func (nf *NetworkFabricScore) Score(ctx context.Context, state framework.CycleSt
 
 	// For gang members, analyze existing pod placements
 	gangPods := nf.getGangMemberPods(pod.Namespace, podGroup)
-	
+
 	if len(gangPods) == 0 {
 		// First pod in gang, return base fabric score
 		klog.V(4).Infof("NetworkFabricScore: pod %s/%s (first in gang %s) on node %s, fabric=%s, score=%d",

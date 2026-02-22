@@ -21,8 +21,8 @@ import (
 	"testing"
 
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 )
 
 func TestName(t *testing.T) {
@@ -135,9 +135,9 @@ func TestGetFabricTierScore(t *testing.T) {
 
 func TestIsNetworkSensitive(t *testing.T) {
 	tests := []struct {
-		name           string
-		annotationVal  string
-		wantSensitive  bool
+		name          string
+		annotationVal string
+		wantSensitive bool
 	}{
 		{"Explicitly true", "true", true},
 		{"Uppercase TRUE", "TRUE", true},
@@ -210,27 +210,27 @@ func TestMeetsFabricTierRequirement(t *testing.T) {
 		{"NVSwitch >= InfiniBand", FabricNVSwitch, FabricInfiniBand, true},
 		{"NVSwitch >= RoCE", FabricNVSwitch, FabricRoCE, true},
 		{"NVSwitch >= Ethernet", FabricNVSwitch, FabricEthernet, true},
-		
+
 		// NVLink meets most requirements
 		{"NVLink < NVSwitch", FabricNVLink, FabricNVSwitch, false},
 		{"NVLink >= NVLink", FabricNVLink, FabricNVLink, true},
 		{"NVLink >= InfiniBand", FabricNVLink, FabricInfiniBand, true},
-		
+
 		// InfiniBand mid-tier
 		{"InfiniBand < NVSwitch", FabricInfiniBand, FabricNVSwitch, false},
 		{"InfiniBand < NVLink", FabricInfiniBand, FabricNVLink, false},
 		{"InfiniBand >= InfiniBand", FabricInfiniBand, FabricInfiniBand, true},
 		{"InfiniBand >= RoCE", FabricInfiniBand, FabricRoCE, true},
-		
+
 		// RoCE lower tier
 		{"RoCE < InfiniBand", FabricRoCE, FabricInfiniBand, false},
 		{"RoCE >= RoCE", FabricRoCE, FabricRoCE, true},
 		{"RoCE >= Ethernet", FabricRoCE, FabricEthernet, true},
-		
+
 		// Ethernet lowest tier
 		{"Ethernet < RoCE", FabricEthernet, FabricRoCE, false},
 		{"Ethernet >= Ethernet", FabricEthernet, FabricEthernet, true},
-		
+
 		// Unknown fabric
 		{"Unknown < NVSwitch", FabricUnknown, FabricNVSwitch, false},
 		{"Unknown >= Unknown", FabricUnknown, FabricUnknown, true},

@@ -32,8 +32,8 @@ import (
 
 const (
 	// Test constants
-	ResourceGPU             = v1.ResourceName("nvidia.com/gpu")
-	AnnotationPriorityTier  = "scheduling.kubenexus.io/priority-tier"
+	ResourceGPU            = v1.ResourceName("nvidia.com/gpu")
+	AnnotationPriorityTier = "scheduling.kubenexus.io/priority-tier"
 )
 
 func TestName(t *testing.T) {
@@ -54,10 +54,10 @@ func TestGetTenantPriority(t *testing.T) {
 	plugin := &TenantHardwareAffinity{}
 
 	tests := []struct {
-		name                string
-		priorityClassName   string
-		annotations         map[string]string
-		expectedPriority    string
+		name              string
+		priorityClassName string
+		annotations       map[string]string
+		expectedPriority  string
 	}{
 		{
 			name:              "High priority class",
@@ -186,11 +186,11 @@ func TestCalculateAffinityScore(t *testing.T) {
 	plugin := &TenantHardwareAffinity{}
 
 	tests := []struct {
-		name            string
-		tenantPriority  string
-		hardwareTier    string
-		expectedScore   int64
-		description     string
+		name           string
+		tenantPriority string
+		hardwareTier   string
+		expectedScore  int64
+		description    string
 	}{
 		{
 			name:           "High priority on premium hardware - perfect match",
@@ -351,6 +351,7 @@ func TestGetHardwareTier(t *testing.T) {
 		})
 	}
 }
+
 // TestScoreWithFramework tests Score() method with proper framework.Handle
 func TestScoreWithFramework(t *testing.T) {
 	// Create test nodes with different hardware tiers
@@ -388,13 +389,13 @@ func TestScoreWithFramework(t *testing.T) {
 	}{
 		{
 			name: "High priority pod prefers premium hardware",
-			pod: testutil.MakePod("high-priority-pod", "default", "", 
+			pod: testutil.MakePod("high-priority-pod", "default", "",
 				v1.ResourceList{ResourceGPU: resource.MustParse("2")},
 				nil,
 				map[string]string{AnnotationPriorityTier: "high-priority"}),
 			expectedScores: map[string]int64{
-				"premium-node":  ScorePerfectMatch,     // 100
-				"standard-node": ScoreAcceptableMatch,  // 70
+				"premium-node":  ScorePerfectMatch,         // 100
+				"standard-node": ScoreAcceptableMatch,      // 70
 				"economy-node":  ScoreAcceptableMatch - 10, // 60
 			},
 		},
@@ -405,9 +406,9 @@ func TestScoreWithFramework(t *testing.T) {
 				nil,
 				map[string]string{AnnotationPriorityTier: "medium-priority"}),
 			expectedScores: map[string]int64{
-				"premium-node":  ScoreMismatchPenalty,  // 20
-				"standard-node": ScorePerfectMatch,     // 100
-				"economy-node":  ScoreAcceptableMatch,  // 70
+				"premium-node":  ScoreMismatchPenalty, // 20
+				"standard-node": ScorePerfectMatch,    // 100
+				"economy-node":  ScoreAcceptableMatch, // 70
 			},
 		},
 		{
@@ -439,8 +440,8 @@ func TestScoreWithFramework(t *testing.T) {
 				},
 			},
 			expectedScores: map[string]int64{
-				"premium-node":  ScorePerfectMatch,     // 100
-				"standard-node": ScoreAcceptableMatch,  // 70
+				"premium-node":  ScorePerfectMatch,         // 100
+				"standard-node": ScoreAcceptableMatch,      // 70
 				"economy-node":  ScoreAcceptableMatch - 10, // 60
 			},
 		},
@@ -449,7 +450,7 @@ func TestScoreWithFramework(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create framework
-			fh, err := testutil.NewTestFramework(nil, 
+			fh, err := testutil.NewTestFramework(nil,
 				frameworkruntime.WithSnapshotSharedLister(testutil.NewFakeSharedLister(nil, nodes)))
 			if err != nil {
 				t.Fatalf("Failed to create framework: %v", err)
@@ -531,7 +532,7 @@ func TestScoreWithNoGPUNodes(t *testing.T) {
 
 		// Without hardware tier info on some nodes, should get neutral score
 		if node.Name == "cpu-node-2" && score != ScoreNoHardwareInfo {
-			t.Errorf("Node %s: expected neutral score %d, got %d", 
+			t.Errorf("Node %s: expected neutral score %d, got %d",
 				node.Name, ScoreNoHardwareInfo, score)
 		}
 	}

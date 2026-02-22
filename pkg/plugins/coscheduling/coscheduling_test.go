@@ -56,12 +56,12 @@ func TestConstants(t *testing.T) {
 // TestPermitWithFramework tests Permit() with proper framework mocking
 func TestPermitWithFramework(t *testing.T) {
 	tests := []struct {
-		name              string
-		pod               *v1.Pod
-		existingPods      []*v1.Pod
-		expectedStatus    fwk.Code
-		expectedWait      bool
-		description       string
+		name           string
+		pod            *v1.Pod
+		existingPods   []*v1.Pod
+		expectedStatus fwk.Code
+		expectedWait   bool
+		description    string
 	}{
 		{
 			name: "Pod without gang annotation - immediate allow",
@@ -158,14 +158,14 @@ func TestPermitWithFramework(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create plugin with fake pod lister containing existing pods
 			plugin := &Coscheduling{
-				podLister:          testutil.NewFakePodLister(tt.existingPods),
-				podGroupManager:    utils.NewPodGroupManager(testutil.NewFakePodLister(tt.existingPods)),
-				frameworkHandle:    nil, // No framework handle needed for basic Permit tests
+				podLister:       testutil.NewFakePodLister(tt.existingPods),
+				podGroupManager: utils.NewPodGroupManager(testutil.NewFakePodLister(tt.existingPods)),
+				frameworkHandle: nil, // No framework handle needed for basic Permit tests
 			}
 
 			// For tests that need IterateOverWaitingPods, we need a handle
 			// but our fake one doesn't support it, so those will use recovery
-			
+
 			state := framework.NewCycleState()
 
 			// Call Permit

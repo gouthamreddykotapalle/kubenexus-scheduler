@@ -259,7 +259,7 @@ func (cs *Coscheduling) Permit(ctx context.Context, state framework.CycleState, 
 					klog.V(5).Infof("IterateOverWaitingPods not available (test mode?): %v", r)
 				}
 			}()
-			
+
 			cs.frameworkHandle.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
 				if waitingPod.GetPod().Namespace == namespace {
 					waitingPodGroupName, _, _ := utils.GetPodGroupLabels(waitingPod.GetPod()) //nolint:errcheck // Error ignored intentionally
@@ -337,10 +337,10 @@ func (cs *Coscheduling) calculateRunningPodsExcluding(podGroupName, namespace st
 		}
 		// Count pods that are running, succeeded, scheduled, or in any active state
 		// For gang scheduling, we count all non-failed, non-succeeded pods as "active"
-		if pod.Status.Phase == v1.PodRunning || 
-		   pod.Status.Phase == v1.PodPending ||
-		   pod.Status.Phase == v1.PodSucceeded || 
-		   pod.Status.Phase == "" { // Empty phase means pod is newly created/scheduled
+		if pod.Status.Phase == v1.PodRunning ||
+			pod.Status.Phase == v1.PodPending ||
+			pod.Status.Phase == v1.PodSucceeded ||
+			pod.Status.Phase == "" { // Empty phase means pod is newly created/scheduled
 			running++
 		}
 	}
@@ -354,14 +354,14 @@ func (cs *Coscheduling) calculateWaitingPods(podGroupName, namespace string) int
 	if cs.frameworkHandle == nil {
 		return waiting
 	}
-	
+
 	// Safely call IterateOverWaitingPods with recovery for test frameworks
 	defer func() {
 		if r := recover(); r != nil {
 			klog.V(5).Infof("IterateOverWaitingPods not available (test mode?): %v", r)
 		}
 	}()
-	
+
 	cs.frameworkHandle.IterateOverWaitingPods(func(waitingPod framework.WaitingPod) {
 		if waitingPod.GetPod().Namespace != namespace {
 			return

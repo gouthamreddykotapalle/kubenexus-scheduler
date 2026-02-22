@@ -170,7 +170,7 @@ func TestCalculateUtilizationScore(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			score := calculateUtilizationScore(tt.utilization)
 			if score != tt.expected {
-				t.Errorf("Expected score %d for %.0f%% utilization, got %d", 
+				t.Errorf("Expected score %d for %.0f%% utilization, got %d",
 					tt.expected, tt.utilization*100, score)
 			}
 		})
@@ -253,9 +253,9 @@ func TestFilterWithFramework(t *testing.T) {
 	}
 
 	tests := []struct {
-		name          string
-		vramRequest   string
-		expectedPass  map[string]bool
+		name         string
+		vramRequest  string
+		expectedPass map[string]bool
 	}{
 		{
 			name:        "70B model needs 80GB VRAM",
@@ -328,7 +328,7 @@ func TestFilterWithFramework(t *testing.T) {
 			for _, node := range nodes {
 				nodeInfo, _ := fh.SnapshotSharedLister().NodeInfos().Get(node.Name)
 				status := filterPlugin.Filter(context.Background(), state, pod, nodeInfo)
-				
+
 				shouldPass := tt.expectedPass[node.Name]
 				didPass := status.IsSuccess()
 
@@ -421,13 +421,13 @@ func TestScoreWithFramework(t *testing.T) {
 			t.Logf("Test: %s", tt.description)
 			for _, node := range nodes {
 				nodeInfo, _ := fh.SnapshotSharedLister().NodeInfos().Get(node.Name)
-			score, status := scorePlugin.Score(context.Background(), state, pod, nodeInfo)
-			if !status.IsSuccess() {
-				t.Logf("  %s: score failed - %v", node.Name, status.AsError())
-			} else {
-				t.Logf("  %s: score %d", node.Name, score)
+				score, status := scorePlugin.Score(context.Background(), state, pod, nodeInfo)
+				if !status.IsSuccess() {
+					t.Logf("  %s: score failed - %v", node.Name, status.AsError())
+				} else {
+					t.Logf("  %s: score %d", node.Name, score)
+				}
 			}
-		}
-	})
+		})
 	}
 }

@@ -39,8 +39,8 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	framework "k8s.io/kube-scheduler/framework"
 	"k8s.io/klog/v2"
+	framework "k8s.io/kube-scheduler/framework"
 )
 
 const (
@@ -63,10 +63,10 @@ const (
 	TierEconomy  = "economy"  // L40, T4, cost-effective
 
 	// Scoring weights
-	ScorePerfectMatch     = 100 // Tenant priority matches hardware tier exactly
-	ScoreAcceptableMatch  = 70  // Tenant can use this tier (not ideal but OK)
-	ScoreMismatchPenalty  = 20  // Heavy penalty for wrong tier
-	ScoreNoHardwareInfo   = 50  // Neutral score when no tier info available
+	ScorePerfectMatch    = 100 // Tenant priority matches hardware tier exactly
+	ScoreAcceptableMatch = 70  // Tenant can use this tier (not ideal but OK)
+	ScoreMismatchPenalty = 20  // Heavy penalty for wrong tier
+	ScoreNoHardwareInfo  = 50  // Neutral score when no tier info available
 )
 
 type TenantHardwareAffinity struct {

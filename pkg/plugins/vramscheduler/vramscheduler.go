@@ -38,31 +38,31 @@ const (
 	AnnotationModelSize   = "scheduling.kubenexus.io/model-size"   // e.g., "70B", "7B" (informational)
 
 	// Node labels for GPU VRAM capacity (per-GPU)
-	LabelGPUVRAM      = "gpu.kubenexus.io/vram"       // e.g., "80Gi", "40Gi", "24Gi"
-	LabelGPUModel     = "gpu.kubenexus.io/model"      // e.g., "H100", "A100-80GB", "L40S"
-	LabelGPUCount     = "gpu.kubenexus.io/count"      // Total GPUs on node
-	LabelGPUTopology  = "topology.kubenexus.io/gpu"   // e.g., "nvswitch", "nvlink"
+	LabelGPUVRAM     = "gpu.kubenexus.io/vram"     // e.g., "80Gi", "40Gi", "24Gi"
+	LabelGPUModel    = "gpu.kubenexus.io/model"    // e.g., "H100", "A100-80GB", "L40S"
+	LabelGPUCount    = "gpu.kubenexus.io/count"    // Total GPUs on node
+	LabelGPUTopology = "topology.kubenexus.io/gpu" // e.g., "nvswitch", "nvlink"
 
 	// NodeResourceTopology zones for per-GPU VRAM
-	NRTZoneGPUPrefix = "gpu-"  // e.g., "gpu-0", "gpu-1"
+	NRTZoneGPUPrefix = "gpu-"                  // e.g., "gpu-0", "gpu-1"
 	NRTResourceVRAM  = "nvidia.com/gpu-memory" // VRAM resource in NRT
 
 	// Scoring constants
-	ScorePerfectFit        = 100  // VRAM request matches GPU capacity exactly
-	ScoreGoodFit           = 80   // VRAM request is 70-95% of GPU capacity
-	ScoreAcceptableFit     = 60   // VRAM request is 50-70% of GPU capacity
-	ScorePoorFit           = 30   // VRAM request is 30-50% of GPU capacity (stranding VRAM)
-	ScoreInsufficientVRAM  = 0    // VRAM is insufficient
-	
+	ScorePerfectFit       = 100 // VRAM request matches GPU capacity exactly
+	ScoreGoodFit          = 80  // VRAM request is 70-95% of GPU capacity
+	ScoreAcceptableFit    = 60  // VRAM request is 50-70% of GPU capacity
+	ScorePoorFit          = 30  // VRAM request is 30-50% of GPU capacity (stranding VRAM)
+	ScoreInsufficientVRAM = 0   // VRAM is insufficient
+
 	// Fit thresholds (percentage of GPU VRAM)
-	ThresholdPerfectFit    = 0.95  // 95-100% utilization
-	ThresholdGoodFit       = 0.70  // 70-95% utilization
-	ThresholdAcceptableFit = 0.50  // 50-70% utilization
-	ThresholdPoorFit       = 0.30  // 30-50% utilization
+	ThresholdPerfectFit    = 0.95 // 95-100% utilization
+	ThresholdGoodFit       = 0.70 // 70-95% utilization
+	ThresholdAcceptableFit = 0.50 // 50-70% utilization
+	ThresholdPoorFit       = 0.30 // 30-50% utilization
 
 	// Bonus/Penalty adjustments
-	BonusHighEndGPU   = 10   // Bonus for scheduling on premium GPUs (H100, A100-80GB)
-	PenaltyStrandVRAM = 20   // Penalty for stranding >50% of VRAM
+	BonusHighEndGPU   = 10 // Bonus for scheduling on premium GPUs (H100, A100-80GB)
+	PenaltyStrandVRAM = 20 // Penalty for stranding >50% of VRAM
 )
 
 // VRAMScheduler implements VRAM-aware scheduling to prevent OOM and optimize VRAM utilization
@@ -133,7 +133,7 @@ func (v *VRAMScheduler) Score(ctx context.Context, state framework.CycleState, p
 		// Multi-GPU case: calculate utilization across all GPUs
 		utilizationRatio := float64(totalVRAMNeeded) / float64(totalAvailableVRAM)
 		score := calculateUtilizationScore(utilizationRatio)
-		
+
 		klog.V(4).InfoS("Multi-GPU VRAM scheduling",
 			"pod", pod.Name,
 			"node", node.Name,
@@ -142,7 +142,7 @@ func (v *VRAMScheduler) Score(ctx context.Context, state framework.CycleState, p
 			"totalAvailable", formatBytes(totalAvailableVRAM),
 			"utilization", fmt.Sprintf("%.1f%%", utilizationRatio*100),
 			"score", score)
-		
+
 		return score, framework.NewStatus(framework.Success)
 	}
 
@@ -289,7 +289,7 @@ func getNodeGPUVRAM(node *v1.Node) (int64, int) {
 			return 0, 0
 		}
 		vramBytes := quantity.Value()
-		
+
 		// Get GPU count
 		gpuCount := 1
 		if countStr, ok := node.Labels[LabelGPUCount]; ok {
@@ -297,7 +297,7 @@ func getNodeGPUVRAM(node *v1.Node) (int64, int) {
 				gpuCount = count
 			}
 		}
-		
+
 		klog.V(5).InfoS("Parsed VRAM from node label",
 			"node", node.Name, "vramPerGPU", formatBytes(vramBytes), "gpuCount", gpuCount)
 		return vramBytes, gpuCount
@@ -314,7 +314,7 @@ func getNodeGPUVRAM(node *v1.Node) (int64, int) {
 					gpuCount = count
 				}
 			}
-			
+
 			klog.V(5).InfoS("Inferred VRAM from GPU model",
 				"node", node.Name, "gpuModel", gpuModel, "vramPerGPU", formatBytes(vramBytes), "gpuCount", gpuCount)
 			return vramBytes, gpuCount
@@ -328,7 +328,7 @@ func getNodeGPUVRAM(node *v1.Node) (int64, int) {
 // inferVRAMFromModel infers VRAM capacity from GPU model name
 func inferVRAMFromModel(gpuModel string) int64 {
 	model := strings.ToUpper(gpuModel)
-	
+
 	// Map of known GPU models to VRAM capacity (in bytes)
 	// Check specific models first, then fall back to base models
 	vramMap := []struct {
@@ -342,7 +342,7 @@ func inferVRAMFromModel(gpuModel string) int64 {
 		{"A100-80GB", 80 * 1024 * 1024 * 1024},
 		{"A100-40GB", 40 * 1024 * 1024 * 1024},
 		{"A100", 40 * 1024 * 1024 * 1024},
-		{"L40S", 48 * 1024 * 1024 * 1024},  // Check L40S before L40
+		{"L40S", 48 * 1024 * 1024 * 1024}, // Check L40S before L40
 		{"L40", 48 * 1024 * 1024 * 1024},
 		{"L4", 24 * 1024 * 1024 * 1024},
 		{"A40", 48 * 1024 * 1024 * 1024},
