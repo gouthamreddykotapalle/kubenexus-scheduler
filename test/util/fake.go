@@ -354,7 +354,8 @@ type fakePodLister struct {
 func (f *fakePodLister) List(selector labels.Selector) ([]*v1.Pod, error) {
 	var filtered []*v1.Pod
 	for _, pod := range f.pods {
-		if selector.Matches(labels.Set(pod.Labels)) {
+		// If selector is nil, return all pods
+		if selector == nil || selector.Matches(labels.Set(pod.Labels)) {
 			filtered = append(filtered, pod)
 		}
 	}

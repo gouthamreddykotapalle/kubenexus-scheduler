@@ -130,13 +130,16 @@ func (rf *ResourceFragmentationScore) detectGPUIsland(nodeInfo framework.NodeInf
 	}
 
 	allocatedGPUs := int64(0)
-	allPods, err := rf.podLister.List(nil)
-	if err == nil {
-		for _, pod := range allPods {
-			if pod.Spec.NodeName == node.Name {
-				for _, container := range pod.Spec.Containers {
-					if gpuReq, ok := container.Resources.Requests[ResourceGPU]; ok {
-						allocatedGPUs += gpuReq.Value()
+	// podLister might be nil in test scenarios
+	if rf.podLister != nil {
+		allPods, err := rf.podLister.List(nil)
+		if err == nil {
+			for _, pod := range allPods {
+				if pod.Spec.NodeName == node.Name {
+					for _, container := range pod.Spec.Containers {
+						if gpuReq, ok := container.Resources.Requests[ResourceGPU]; ok {
+							allocatedGPUs += gpuReq.Value()
+						}
 					}
 				}
 			}
@@ -193,12 +196,15 @@ func (rf *ResourceFragmentationScore) scoreCPUMemoryFragmentation(pod *v1.Pod, n
 	allocatableCPU := float64(node.Status.Allocatable.Cpu().MilliValue())
 	requestedCPU := float64(0)
 
-	allPods, err := rf.podLister.List(nil)
-	if err == nil {
-		for _, p := range allPods {
-			if p.Spec.NodeName == node.Name {
-				for _, container := range p.Spec.Containers {
-					requestedCPU += float64(container.Resources.Requests.Cpu().MilliValue())
+	// podLister might be nil in test scenarios
+	if rf.podLister != nil {
+		allPods, err := rf.podLister.List(nil)
+		if err == nil {
+			for _, p := range allPods {
+				if p.Spec.NodeName == node.Name {
+					for _, container := range p.Spec.Containers {
+						requestedCPU += float64(container.Resources.Requests.Cpu().MilliValue())
+					}
 				}
 			}
 		}

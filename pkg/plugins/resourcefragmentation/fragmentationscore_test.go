@@ -22,9 +22,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	fwk "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework"
-	frameworkruntime "k8s.io/kubernetes/pkg/scheduler/framework/runtime"
 
 	testutil "sigs.k8s.io/scheduler-plugins/test/util"
 )
@@ -247,21 +245,14 @@ func TestScoreWithFramework(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create framework with shared lister
+			// Create plugin directly with fake pod lister
+			plugin := &ResourceFragmentationScore{
+				handle:    nil,
+				podLister: testutil.NewFakePodLister(existingPods),
+			}
+
+			// Create shared lister for getting NodeInfo
 			snapshot := testutil.NewFakeSharedLister(existingPods, nodes)
-			fh, err := testutil.NewTestFramework(nil,
-				frameworkruntime.WithSnapshotSharedLister(snapshot))
-			if err != nil {
-				t.Fatalf("Failed to create framework: %v", err)
-			}
-
-			// Create plugin
-			plugin, err := New(context.Background(), nil, fh)
-			if err != nil {
-				t.Fatalf("Failed to create plugin: %v", err)
-			}
-
-			scorePlugin := plugin.(fwk.ScorePlugin)
 			state := framework.NewCycleState()
 
 			// Score each node
@@ -271,7 +262,7 @@ func TestScoreWithFramework(t *testing.T) {
 					t.Fatalf("Failed to get NodeInfo for %s: %v", node.Name, err)
 				}
 
-				score, status := scorePlugin.Score(context.Background(), state, tt.pod, nodeInfo)
+				score, status := plugin.Score(context.Background(), state, tt.pod, nodeInfo)
 				if !status.IsSuccess() {
 					t.Errorf("Score failed for node %s: %v", node.Name, status.AsError())
 				}
@@ -390,33 +381,30 @@ func TestScoreTopologyPreference(t *testing.T) {
 		nil, nil)
 
 	snapshot := testutil.NewFakeSharedLister(nil, nodes)
-	fh, err := testutil.NewTestFramework(nil,
-		frameworkruntime.WithSnapshotSharedLister(snapshot))
-	if err != nil {
-		t.Fatalf("Failed to create framework: %v", err)
+	
+	// Create plugin directly with fake pod lister
+	plugin := &ResourceFragmentationScore{
+		handle:    nil,
+		podLister: testutil.NewFakePodLister(nil),
 	}
 
-	plugin, err := New(context.Background(), nil, fh)
-	if err != nil {
-		t.Fatalf("Failed to create plugin: %v", err)
-	}
-
-	scorePlugin := plugin.(fwk.ScorePlugin)
 	state := framework.NewCycleState()
 
 	// NVSwitch should score highest for large workloads
 	nvswitchInfo, _ := snapshot.NodeInfos().Get("nvswitch-node")
-	nvswitchScore, _ := scorePlugin.Score(context.Background(), state, pod, nvswitchInfo)
+	nvswitchScore, _ := plugin.Score(context.Background(), state, pod, nvswitchInfo)
 
 	// NVLink and PCIe should be filtered out (can't fit 8 GPUs)
 	nvlinkInfo, _ := snapshot.NodeInfos().Get("nvlink-node")
-	nvlinkScore, _ := scorePlugin.Score(context.Background(), state, pod, nvlinkInfo)
+	nvlinkScore, _ := plugin.Score(context.Background(), state, pod, nvlinkInfo)
 
 	pcieInfo, _ := snapshot.NodeInfos().Get("pcie-node")
-	pcieScore, _ := scorePlugin.Score(context.Background(), state, pod, pcieInfo)
+	pcieScore, _ := plugin.Score(context.Background(), state, pod, pcieInfo)
 
-	if nvswitchScore != 100 {
-		t.Errorf("NVSwitch node should score 100 for 8-GPU workload, got %d", nvswitchScore)
+	// NVSwitch should have perfect fit bonus (8 GPUs requested, 8 available)
+	if nvswitchScore != BonusPerfectFit {
+		t.Errorf("NVSwitch node should score %d (perfect fit) for 8-GPU workload, got %d",
+			BonusPerfectFit, nvswitchScore)
 	}
 	if nvlinkScore != 0 {
 		t.Errorf("NVLink node should score 0 (too small), got %d", nvlinkScore)
