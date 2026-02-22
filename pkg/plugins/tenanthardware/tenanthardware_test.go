@@ -33,7 +33,7 @@ import (
 const (
 	// Test constants
 	ResourceGPU             = v1.ResourceName("nvidia.com/gpu")
-	AnnotationPriorityTier  = "scheduler.kubenexus.io/priority-tier"
+	AnnotationPriorityTier  = "scheduling.kubenexus.io/priority-tier"
 )
 
 func TestName(t *testing.T) {
