@@ -13,8 +13,9 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-
-// Package tenanthardware implements tenant-to-hardware affinity scoring for economic efficiency.
+// Package tenanthardware implements a scheduler plugin for tenant-hardware affinity scoring,
+// matching tenant priority levels (high/medium/low) to hardware tiers (premium/standard/economy)
+// to optimize cost-efficiency and prevent resource waste.// Package tenanthardware implements tenant-to-hardware affinity scoring for economic efficiency.
 //
 // THE ECONOMIC PROBLEM:
 // In heterogeneous GPU clusters (H100, A100, L40), the native scheduler treats "a GPU is a GPU".

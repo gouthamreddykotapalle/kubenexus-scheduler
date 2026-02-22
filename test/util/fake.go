@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package util provides testing utilities for KubeNexus scheduler plugins,
+// including fake listers, test frameworks, and helper functions for creating test fixtures.
 package util
 
 import (

@@ -161,19 +161,19 @@ func GetWorkloadPodGroupInfo(ctx context.Context, pod *v1.Pod, dynamicClient dyn
 			continue
 		}
 
-		name, _, _ := getNestedString(pgMap, "name")
-		if name != podGroupName {
+		name, _, err := getNestedString(pgMap, "name")
+		if err != nil || name != podGroupName {
 			continue
 		}
 
 		// Found the matching pod group, extract gang policy
-		policy, found, _ := getNestedMap(pgMap, "policy")
-		if !found {
+		policy, found, err := getNestedMap(pgMap, "policy")
+		if err != nil || !found {
 			continue
 		}
 
-		gang, found, _ := getNestedMap(policy, "gang")
-		if !found {
+		gang, found, err := getNestedMap(policy, "gang")
+		if err != nil || !found {
 			continue
 		}
 

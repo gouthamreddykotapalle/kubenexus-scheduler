@@ -317,10 +317,6 @@ func (cs *Coscheduling) calculateTotalPods(podGroupName, namespace string) int {
 	return len(pods)
 }
 
-func (cs *Coscheduling) calculateRunningPods(podGroupName, namespace string) int {
-	return cs.calculateRunningPodsExcluding(podGroupName, namespace, "")
-}
-
 func (cs *Coscheduling) calculateRunningPodsExcluding(podGroupName, namespace string, excludeName string) int {
 	selector := labels.Set{PodGroupName: podGroupName}.AsSelector()
 	pods, err := cs.podLister.Pods(namespace).List(selector)

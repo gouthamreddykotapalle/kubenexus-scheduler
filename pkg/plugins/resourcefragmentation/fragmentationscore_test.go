@@ -391,14 +391,23 @@ func TestScoreTopologyPreference(t *testing.T) {
 	state := framework.NewCycleState()
 
 	// NVSwitch should score highest for large workloads
-	nvswitchInfo, _ := snapshot.NodeInfos().Get("nvswitch-node")
+	nvswitchInfo, err := snapshot.NodeInfos().Get("nvswitch-node")
+	if err != nil {
+		t.Fatalf("Failed to get nvswitch-node: %v", err)
+	}
 	nvswitchScore, _ := plugin.Score(context.Background(), state, pod, nvswitchInfo)
 
 	// NVLink and PCIe should be filtered out (can't fit 8 GPUs)
-	nvlinkInfo, _ := snapshot.NodeInfos().Get("nvlink-node")
+	nvlinkInfo, err := snapshot.NodeInfos().Get("nvlink-node")
+	if err != nil {
+		t.Fatalf("Failed to get nvlink-node: %v", err)
+	}
 	nvlinkScore, _ := plugin.Score(context.Background(), state, pod, nvlinkInfo)
 
-	pcieInfo, _ := snapshot.NodeInfos().Get("pcie-node")
+	pcieInfo, err := snapshot.NodeInfos().Get("pcie-node")
+	if err != nil {
+		t.Fatalf("Failed to get pcie-node: %v", err)
+	}
 	pcieScore, _ := plugin.Score(context.Background(), state, pod, pcieInfo)
 
 	// NVSwitch should have perfect fit bonus (8 GPUs requested, 8 available)

@@ -14,6 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package resourcefragmentation implements a scheduler plugin that minimizes resource fragmentation
+// by scoring nodes based on how well they pack resources, preferring nodes that maintain contiguous
+// resource blocks (islands) for better GPU interconnect performance.
 package resourcefragmentation
 
 import (
