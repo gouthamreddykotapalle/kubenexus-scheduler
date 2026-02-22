@@ -88,6 +88,25 @@ data:
       kubeconfig: ""
     profiles:
     - schedulerName: kubenexus-scheduler
+      plugins:
+        # Queue sorting - prioritize gang scheduling pods
+        queueSort:
+          enabled:
+          - name: Coscheduling
+          disabled:
+          - name: "*"
+        # PreFilter phase - validate gang scheduling requirements
+        preFilter:
+          enabled:
+          - name: Coscheduling
+        # Permit phase - wait for all pods in gang to be ready
+        permit:
+          enabled:
+          - name: Coscheduling
+        # Reserve phase - reserve resources for gang
+        reserve:
+          enabled:
+          - name: Coscheduling
 ---
 apiVersion: apps/v1
 kind: Deployment
