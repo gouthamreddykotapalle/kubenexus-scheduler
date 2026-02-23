@@ -151,7 +151,3 @@ func TestGetGPURequest(t *testing.T) {
 		})
 	}
 }
-
-func ptrInt32(i int32) *int32 {
-	return &i
-}
