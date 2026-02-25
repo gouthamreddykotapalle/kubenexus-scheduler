@@ -491,18 +491,19 @@ func TestScoreWithFramework(t *testing.T) {
 		})
 	}
 }
+
 // Test GPU topology extraction and bonus calculation
 func TestGPUTopologyBonus(t *testing.T) {
 	plugin := &VRAMScheduler{}
 
 	tests := []struct {
-		name           string
-		gpuDevices     []GPUDevice
-		gpusRequested  int
-		expectedBonus  int64
-		expectNUMA     bool
-		expectNVLink   bool
-		expectPCIe     bool
+		name          string
+		gpuDevices    []GPUDevice
+		gpusRequested int
+		expectedBonus int64
+		expectNUMA    bool
+		expectNVLink  bool
+		expectPCIe    bool
 	}{
 		{
 			name: "Single GPU - no bonus",

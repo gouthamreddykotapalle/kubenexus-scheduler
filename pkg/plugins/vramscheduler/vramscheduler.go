@@ -125,7 +125,7 @@ const (
 	BronzeThresholdGoodFit       = 0.60 // 60-90% utilization
 	BronzeThresholdAcceptableFit = 0.40 // 40-60% utilization
 	BronzeThresholdPoorFit       = 0.20 // 20-40% utilization
-	
+
 	// GPU Topology scoring bonuses
 	BonusGPUNUMALocality = 15 // Bonus when GPUs are on same NUMA node
 	BonusNVLinkConnected = 25 // Bonus when GPUs have NVLink connectivity
@@ -179,7 +179,7 @@ func (v *VRAMScheduler) Score(ctx context.Context, state framework.CycleState, p
 	// Get GPU VRAM capacity and topology from node (now reading from DRA ResourceSlices)
 	gpuVRAM, gpuCount := v.getNodeGPUVRAM(ctx, node)
 	_, gpuDevices := v.getNodeGPUTopology(ctx, node)
-	
+
 	if gpuVRAM == 0 {
 		// Node has no GPU or VRAM info
 		klog.V(5).InfoS("Node has no GPU VRAM information",
@@ -594,12 +594,12 @@ func getVRAMRequest(pod *v1.Pod) int64 {
 func (v *VRAMScheduler) getNodeGPUVRAM(ctx context.Context, node *v1.Node) (int64, int) {
 	// New: also return GPU topology information
 	_, gpuDevices := v.getNodeGPUTopology(ctx, node)
-	
+
 	if len(gpuDevices) == 0 {
 		// Fallback to labels
 		return getNodeGPUVRAMFromLabels(node)
 	}
-	
+
 	// Use minimum VRAM for heterogeneous GPUs
 	var vramPerGPU int64
 	for _, gpu := range gpuDevices {
@@ -607,7 +607,7 @@ func (v *VRAMScheduler) getNodeGPUVRAM(ctx context.Context, node *v1.Node) (int6
 			vramPerGPU = gpu.VRAM
 		}
 	}
-	
+
 	return vramPerGPU, len(gpuDevices)
 }
 
