@@ -1,5 +1,6 @@
 /*
 Copyright 2020 The Kubernetes Authors.
+Copyright 2026 The KubeNexus Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -12,6 +13,12 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
+
+This plugin is derived from kubernetes-sigs/scheduler-plugins coscheduling
+with the following enhancements:
+- ProfileClassifier integration for tenant/workload-aware gang detection
+- Enhanced starvation prevention with age-based priority boosting
+- Integration with ResourceReservation plugin for driver pod protection
 */
 
 // Package coscheduling implements gang scheduling with enterprise features.

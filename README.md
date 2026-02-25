@@ -814,11 +814,35 @@ v1.0 (Late-26): 5,000+ nodes validated
 
 ---
 
+## Relationship to Upstream Plugins
+
+KubeNexus builds on the Kubernetes [scheduler-plugins](https://github.com/kubernetes-sigs/scheduler-plugins) ecosystem:
+
+**Directly Uses (with enhancements):**
+- ✅ **Coscheduling** - Forked from upstream with ProfileClassifier integration and starvation prevention
+
+**Custom Alternatives:**
+- 🔄 **NUMA Plugin** - Replaces NodeResourceTopologyMatch with gang+NUMA coordination and memory bandwidth optimization
+
+**100% Custom Plugins:**
+- ✨ **VRAMScheduler** - DRA-aware GPU VRAM placement
+- ✨ **ProfileClassifier** - 3-axis workload classification (WHO/WHAT/WHERE)
+- ✨ **TenantHardware** - Tenant-tier to hardware-tier matching
+- ✨ **ResourceFragmentation** - GPU island preservation
+- ✨ **WorkloadAware** - Bin-pack vs spread based on workload type
+- ✨ **BackfillScheduler** - Profile-aware preemptibility
+- ✨ **GangPreemption** - Tenant-aware gang victim selection
+
+**See detailed comparison:** [UPSTREAM_COMPARISON.md](docs/UPSTREAM_COMPARISON.md) - Honest assessment of what's implemented vs. roadmap, and how we differ from upstream plugins.
+
+---
+
 ## Documentation
 
 | Document | Description |
 |----------|-------------|
 | [**User Guide**](docs/USER_GUIDE.md) | Complete guide with examples and troubleshooting |
+| [**Upstream Comparison**](docs/UPSTREAM_COMPARISON.md) | How we differ from K8s scheduler-plugins (honest assessment) |
 | [**Kubeflow Integration**](docs/KUBEFLOW_INTEGRATION.md) | Using KubeNexus with Kubeflow Training Operator |
 | [**Spark Operator Integration**](docs/SPARK_OPERATOR_INTEGRATION.md) | Complete Spark on Kubernetes guide |
 | [**Operator CRD Support**](docs/OPERATOR_CRD_SUPPORT.md) | How KubeNexus works with any Kubernetes operator |

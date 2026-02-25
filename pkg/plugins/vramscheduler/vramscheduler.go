@@ -125,7 +125,23 @@ const (
 	BronzeThresholdGoodFit       = 0.60 // 60-90% utilization
 	BronzeThresholdAcceptableFit = 0.40 // 40-60% utilization
 	BronzeThresholdPoorFit       = 0.20 // 20-40% utilization
+	
+	// GPU Topology scoring bonuses
+	BonusGPUNUMALocality = 15 // Bonus when GPUs are on same NUMA node
+	BonusNVLinkConnected = 25 // Bonus when GPUs have NVLink connectivity
+	BonusPCIeLocality    = 10 // Bonus when GPUs share PCIe switch
 )
+
+// GPUDevice represents a GPU with its topology information
+type GPUDevice struct {
+	Name         string   // Device name from DRA (e.g., "gpu-0")
+	VRAM         int64    // VRAM capacity in bytes
+	NUMANode     int      // NUMA node ID (-1 if unknown)
+	PCIeBusID    string   // PCIe bus ID (e.g., "0000:17:00.0")
+	PCIeSwitch   string   // PCIe switch identifier
+	NVLinkPeers  []string // List of GPU names with NVLink connections
+	NVLinkDomain int      // NVLink domain/island ID (-1 if unknown)
+}
 
 // VRAMScheduler implements VRAM-aware scheduling to prevent OOM and optimize VRAM utilization
 type VRAMScheduler struct {
@@ -160,8 +176,10 @@ func (v *VRAMScheduler) Score(ctx context.Context, state framework.CycleState, p
 		return ScoreAcceptableFit, framework.NewStatus(framework.Success)
 	}
 
-	// Get GPU VRAM capacity from node (now reading from DRA ResourceSlices)
+	// Get GPU VRAM capacity and topology from node (now reading from DRA ResourceSlices)
 	gpuVRAM, gpuCount := v.getNodeGPUVRAM(ctx, node)
+	_, gpuDevices := v.getNodeGPUTopology(ctx, node)
+	
 	if gpuVRAM == 0 {
 		// Node has no GPU or VRAM info
 		klog.V(5).InfoS("Node has no GPU VRAM information",
@@ -241,6 +259,23 @@ func (v *VRAMScheduler) Score(ctx context.Context, state framework.CycleState, p
 			"finalScore", score)
 	}
 
+	// Apply GPU topology bonuses for multi-GPU workloads
+	if gpusRequested > 1 && len(gpuDevices) >= gpusRequested {
+		topologyBonus := v.calculateGPUTopologyBonus(gpuDevices, gpusRequested, pod)
+		score += topologyBonus
+		if score > 100 {
+			score = 100
+		}
+		if topologyBonus > 0 {
+			klog.V(4).InfoS("Applied GPU topology bonus",
+				"pod", pod.Name,
+				"node", node.Name,
+				"gpusRequested", gpusRequested,
+				"topologyBonus", topologyBonus,
+				"finalScore", score)
+		}
+	}
+
 	klog.V(4).InfoS("VRAM-aware scheduling score",
 		"pod", pod.Name,
 		"namespace", pod.Namespace,
@@ -258,6 +293,123 @@ func (v *VRAMScheduler) Score(ctx context.Context, state framework.CycleState, p
 // ScoreExtensions returns nil (no normalization needed)
 func (v *VRAMScheduler) ScoreExtensions() framework.ScoreExtensions {
 	return nil
+}
+
+// calculateGPUTopologyBonus computes bonus score based on GPU topology characteristics:
+// - GPU-to-NUMA locality (all GPUs on same NUMA node)
+// - NVLink connectivity (GPUs form a connected island)
+// - PCIe locality (GPUs share same PCIe switch)
+func (v *VRAMScheduler) calculateGPUTopologyBonus(gpuDevices []GPUDevice, gpusRequested int, pod *v1.Pod) int64 {
+	if len(gpuDevices) < gpusRequested {
+		return 0 // Cannot satisfy request
+	}
+
+	// Topology bonuses only apply to multi-GPU workloads
+	if gpusRequested <= 1 {
+		return 0
+	}
+
+	var totalBonus int64
+
+	// Check for NUMA locality: all requested GPUs on same NUMA node
+	numaLocality := v.checkGPUNUMALocality(gpuDevices, gpusRequested)
+	if numaLocality {
+		totalBonus += BonusGPUNUMALocality
+		klog.V(5).InfoS("GPU-NUMA locality bonus applied",
+			"pod", pod.Name,
+			"bonus", BonusGPUNUMALocality)
+	}
+
+	// Check for NVLink connectivity: requested GPUs form connected island
+	nvlinkConnectivity := v.checkNVLinkConnectivity(gpuDevices, gpusRequested)
+	if nvlinkConnectivity {
+		totalBonus += BonusNVLinkConnected
+		klog.V(5).InfoS("NVLink connectivity bonus applied",
+			"pod", pod.Name,
+			"bonus", BonusNVLinkConnected)
+	}
+
+	// Check for PCIe locality: GPUs share same PCIe switch
+	pcieLocality := v.checkPCIeLocality(gpuDevices, gpusRequested)
+	if pcieLocality {
+		totalBonus += BonusPCIeLocality
+		klog.V(5).InfoS("PCIe locality bonus applied",
+			"pod", pod.Name,
+			"bonus", BonusPCIeLocality)
+	}
+
+	return totalBonus
+}
+
+// checkGPUNUMALocality checks if gpusRequested GPUs can be found on same NUMA node
+func (v *VRAMScheduler) checkGPUNUMALocality(gpuDevices []GPUDevice, gpusRequested int) bool {
+	// Group GPUs by NUMA node
+	numaGroups := make(map[int]int)
+	for _, gpu := range gpuDevices {
+		if gpu.NUMANode >= 0 {
+			numaGroups[gpu.NUMANode]++
+		}
+	}
+
+	// Check if any NUMA node has enough GPUs
+	for _, count := range numaGroups {
+		if count >= gpusRequested {
+			return true
+		}
+	}
+	return false
+}
+
+// checkNVLinkConnectivity checks if gpusRequested GPUs have NVLink connections forming a connected island
+func (v *VRAMScheduler) checkNVLinkConnectivity(gpuDevices []GPUDevice, gpusRequested int) bool {
+	// Option 1: All GPUs in same NVLink domain (pre-computed by DRA driver)
+	if gpusRequested <= 1 {
+		return false // Single GPU doesn't need NVLink
+	}
+
+	domainGroups := make(map[int]int)
+	for _, gpu := range gpuDevices {
+		if gpu.NVLinkDomain >= 0 {
+			domainGroups[gpu.NVLinkDomain]++
+		}
+	}
+
+	for _, count := range domainGroups {
+		if count >= gpusRequested {
+			return true
+		}
+	}
+
+	// Option 2: Check peer-to-peer connectivity graph
+	// Find largest connected component with NVLink peers
+	// (simplified: check if any GPU has enough peers - full graph analysis would be more complex)
+	for _, gpu := range gpuDevices {
+		if len(gpu.NVLinkPeers) >= gpusRequested-1 {
+			// This GPU is connected to enough peers (might form island)
+			return true
+		}
+	}
+
+	return false
+}
+
+// checkPCIeLocality checks if gpusRequested GPUs share same PCIe switch
+func (v *VRAMScheduler) checkPCIeLocality(gpuDevices []GPUDevice, gpusRequested int) bool {
+	// Group GPUs by PCIe switch
+	pcieGroups := make(map[string]int)
+	for _, gpu := range gpuDevices {
+		if gpu.PCIeSwitch != "" {
+			pcieGroups[gpu.PCIeSwitch]++
+		}
+	}
+
+	// Check if any PCIe switch has enough GPUs
+	for _, count := range pcieGroups {
+		if count >= gpusRequested {
+			return true
+		}
+	}
+	return false
 }
 
 // Filter filters out nodes that don't have sufficient VRAM
@@ -437,13 +589,40 @@ func getVRAMRequest(pod *v1.Pod) int64 {
 	return 0
 }
 
-// getNodeGPUVRAM extracts GPU VRAM capacity from DRA ResourceSlices (returns per-GPU VRAM in bytes and total GPU count)
+// getNodeGPUVRAM extracts GPU VRAM capacity from DRA Resource Slices (returns per-GPU VRAM in bytes and total GPU count)
 // This function now queries the Kubernetes API for ResourceSlices associated with the node
 func (v *VRAMScheduler) getNodeGPUVRAM(ctx context.Context, node *v1.Node) (int64, int) {
+	// New: also return GPU topology information
+	_, gpuDevices := v.getNodeGPUTopology(ctx, node)
+	
+	if len(gpuDevices) == 0 {
+		// Fallback to labels
+		return getNodeGPUVRAMFromLabels(node)
+	}
+	
+	// Use minimum VRAM for heterogeneous GPUs
+	var vramPerGPU int64
+	for _, gpu := range gpuDevices {
+		if vramPerGPU == 0 || gpu.VRAM < vramPerGPU {
+			vramPerGPU = gpu.VRAM
+		}
+	}
+	
+	return vramPerGPU, len(gpuDevices)
+}
+
+// getNodeGPUTopology extracts full GPU topology information from DRA ResourceSlices
+// Returns (vramPerGPU, []GPUDevice with full topology)
+func (v *VRAMScheduler) getNodeGPUTopology(ctx context.Context, node *v1.Node) (int64, []GPUDevice) {
 	if v.clientset == nil {
 		klog.V(4).InfoS("No clientset available, falling back to node labels",
 			"node", node.Name)
-		return getNodeGPUVRAMFromLabels(node)
+		vramPerGPU, gpuCount := getNodeGPUVRAMFromLabels(node)
+		devices := make([]GPUDevice, gpuCount)
+		for i := range devices {
+			devices[i] = GPUDevice{VRAM: vramPerGPU, NUMANode: -1, NVLinkDomain: -1}
+		}
+		return vramPerGPU, devices
 	}
 
 	// Query ResourceSlices for this node
@@ -454,76 +633,116 @@ func (v *VRAMScheduler) getNodeGPUVRAM(ctx context.Context, node *v1.Node) (int6
 	if err != nil {
 		klog.V(4).InfoS("Failed to list ResourceSlices for node, falling back to labels",
 			"node", node.Name, "error", err)
-		return getNodeGPUVRAMFromLabels(node)
+		vramPerGPU, gpuCount := getNodeGPUVRAMFromLabels(node)
+		// Return empty GPU devices with VRAM information
+		devices := make([]GPUDevice, gpuCount)
+		for i := range devices {
+			devices[i] = GPUDevice{VRAM: vramPerGPU, NUMANode: -1, NVLinkDomain: -1}
+		}
+		return vramPerGPU, devices
 	}
 
 	if len(resourceSlices.Items) == 0 {
 		klog.V(5).InfoS("No ResourceSlices found for node, falling back to labels",
 			"node", node.Name)
-		return getNodeGPUVRAMFromLabels(node)
+		vramPerGPU, gpuCount := getNodeGPUVRAMFromLabels(node)
+		devices := make([]GPUDevice, gpuCount)
+		for i := range devices {
+			devices[i] = GPUDevice{VRAM: vramPerGPU, NUMANode: -1, NVLinkDomain: -1}
+		}
+		return vramPerGPU, devices
 	}
 
-	// Extract VRAM from ResourceSlice devices
-	// Assumption: All GPUs on the node have the same VRAM capacity (per-GPU)
+	// Extract VRAM and topology from ResourceSlice devices
+	var gpuDevices []GPUDevice
 	var vramPerGPU int64
-	gpuCount := 0
 
 	for _, slice := range resourceSlices.Items {
-		// Check if this is a GPU driver (common patterns: gpu.*, nvidia.com/*, etc.)
+		// Check if this is a GPU driver
 		if !isGPUDriver(slice.Spec.Driver) {
 			continue
 		}
 
 		for _, device := range slice.Spec.Devices {
-			// Check if device has memory capacity (VRAM)
-			if device.Capacity == nil {
-				continue
+			gpu := GPUDevice{
+				Name:         device.Name,
+				NUMANode:     -1, // Default: unknown
+				NVLinkDomain: -1,
 			}
 
-			// Look for memory attribute in capacity
-			for resourceName, deviceCapacity := range device.Capacity {
-				if strings.Contains(strings.ToLower(string(resourceName)), "memory") {
-					// DeviceCapacity.Value is already a resource.Quantity
-					vramBytes := deviceCapacity.Value.Value()
-					if vramBytes > 0 {
-						// Found VRAM for this GPU
-						if vramPerGPU == 0 {
-							vramPerGPU = vramBytes
-						} else if vramPerGPU != vramBytes {
-							// Heterogeneous GPUs on same node - use minimum VRAM
-							klog.V(4).InfoS("Detected heterogeneous GPU VRAM on node",
-								"node", node.Name,
-								"gpu1VRAM", formatBytes(vramPerGPU),
-								"gpu2VRAM", formatBytes(vramBytes))
-							if vramBytes < vramPerGPU {
-								vramPerGPU = vramBytes
-							}
+			// Extract VRAM capacity
+			if device.Capacity != nil {
+				for resourceName, deviceCapacity := range device.Capacity {
+					if strings.Contains(strings.ToLower(string(resourceName)), "memory") {
+						gpu.VRAM = deviceCapacity.Value.Value()
+						if vramPerGPU == 0 || gpu.VRAM < vramPerGPU {
+							vramPerGPU = gpu.VRAM
 						}
-						gpuCount++
-
-						klog.V(6).InfoS("Found GPU device in ResourceSlice",
-							"node", node.Name,
-							"device", device.Name,
-							"vram", formatBytes(vramBytes))
+						break
 					}
-					break
 				}
+			}
+
+			// Extract topology attributes from DRA
+			if device.Attributes != nil {
+				// GPU-to-NUMA affinity
+				if numaAttr, exists := device.Attributes["numa-node"]; exists && numaAttr.IntValue != nil {
+					gpu.NUMANode = int(*numaAttr.IntValue)
+				}
+
+				// PCIe topology
+				if pcieAttr, exists := device.Attributes["pcie-bus-id"]; exists && pcieAttr.StringValue != nil {
+					gpu.PCIeBusID = *pcieAttr.StringValue
+				}
+				if switchAttr, exists := device.Attributes["pcie-switch"]; exists && switchAttr.StringValue != nil {
+					gpu.PCIeSwitch = *switchAttr.StringValue
+				}
+
+				// NVLink topology
+				if peersAttr, exists := device.Attributes["nvlink-peers"]; exists && peersAttr.StringValue != nil {
+					peerList := strings.Split(*peersAttr.StringValue, ",")
+					for _, peer := range peerList {
+						peer = strings.TrimSpace(peer)
+						if peer != "" {
+							gpu.NVLinkPeers = append(gpu.NVLinkPeers, peer)
+						}
+					}
+				}
+				if domainAttr, exists := device.Attributes["nvlink-domain"]; exists && domainAttr.IntValue != nil {
+					gpu.NVLinkDomain = int(*domainAttr.IntValue)
+				}
+			}
+
+			if gpu.VRAM > 0 {
+				gpuDevices = append(gpuDevices, gpu)
+				klog.V(5).InfoS("Discovered GPU with topology",
+					"node", node.Name,
+					"gpu", gpu.Name,
+					"vram", formatBytes(gpu.VRAM),
+					"numaNode", gpu.NUMANode,
+					"nvlinkPeers", len(gpu.NVLinkPeers),
+					"pcieSwitch", gpu.PCIeSwitch)
 			}
 		}
 	}
 
-	if gpuCount > 0 && vramPerGPU > 0 {
-		klog.V(5).InfoS("Extracted VRAM from DRA ResourceSlices",
+	if len(gpuDevices) > 0 {
+		klog.V(4).InfoS("Extracted GPU topology from DRA ResourceSlices",
 			"node", node.Name,
-			"vramPerGPU", formatBytes(vramPerGPU),
-			"gpuCount", gpuCount)
-		return vramPerGPU, gpuCount
+			"gpuCount", len(gpuDevices),
+			"vramPerGPU", formatBytes(vramPerGPU))
+		return vramPerGPU, gpuDevices
 	}
 
 	// No GPU info in ResourceSlices, fall back to node labels
-	klog.V(5).InfoS("No GPU VRAM found in ResourceSlices, falling back to labels",
+	klog.V(5).InfoS("No GPU topology found in ResourceSlices, falling back to labels",
 		"node", node.Name)
-	return getNodeGPUVRAMFromLabels(node)
+	vramPerGPU, gpuCount := getNodeGPUVRAMFromLabels(node)
+	devices := make([]GPUDevice, gpuCount)
+	for i := range devices {
+		devices[i] = GPUDevice{VRAM: vramPerGPU, NUMANode: -1, NVLinkDomain: -1}
+	}
+	return vramPerGPU, devices
 }
 
 // isGPUDriver checks if the driver name indicates a GPU resource driver

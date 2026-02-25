@@ -32,6 +32,7 @@ import (
 
 const (
 	ResourceGPU = v1.ResourceName("nvidia.com/gpu")
+	GiB         = 1024 * 1024 * 1024 // 1 GiB in bytes
 )
 
 func TestName(t *testing.T) {
@@ -486,6 +487,360 @@ func TestScoreWithFramework(t *testing.T) {
 				} else {
 					t.Logf("  %s: score %d", node.Name, score)
 				}
+			}
+		})
+	}
+}
+// Test GPU topology extraction and bonus calculation
+func TestGPUTopologyBonus(t *testing.T) {
+	plugin := &VRAMScheduler{}
+
+	tests := []struct {
+		name           string
+		gpuDevices     []GPUDevice
+		gpusRequested  int
+		expectedBonus  int64
+		expectNUMA     bool
+		expectNVLink   bool
+		expectPCIe     bool
+	}{
+		{
+			name: "Single GPU - no bonus",
+			gpuDevices: []GPUDevice{
+				{Name: "gpu-0", VRAM: 80 * GiB, NUMANode: 0},
+			},
+			gpusRequested: 1,
+			expectedBonus: 0,
+			expectNUMA:    true, // Single GPU on NUMA 0 counts as locality
+			expectNVLink:  false,
+			expectPCIe:    false,
+		},
+		{
+			name: "2 GPUs on same NUMA node",
+			gpuDevices: []GPUDevice{
+				{Name: "gpu-0", VRAM: 80 * GiB, NUMANode: 0, NVLinkDomain: -1},
+				{Name: "gpu-1", VRAM: 80 * GiB, NUMANode: 0, NVLinkDomain: -1},
+			},
+			gpusRequested: 2,
+			expectedBonus: BonusGPUNUMALocality,
+			expectNUMA:    true,
+			expectNVLink:  false, // Explicitly set NVLinkDomain to -1
+			expectPCIe:    false,
+		},
+		{
+			name: "2 GPUs with NVLink connectivity",
+			gpuDevices: []GPUDevice{
+				{Name: "gpu-0", VRAM: 80 * GiB, NUMANode: -1, NVLinkPeers: []string{"gpu-1"}, NVLinkDomain: 0},
+				{Name: "gpu-1", VRAM: 80 * GiB, NUMANode: -1, NVLinkPeers: []string{"gpu-0"}, NVLinkDomain: 0},
+			},
+			gpusRequested: 2,
+			expectedBonus: BonusNVLinkConnected,
+			expectNUMA:    false, // Set NUMA to -1 (unknown)
+			expectNVLink:  true,
+			expectPCIe:    false,
+		},
+		{
+			name: "4 GPUs on same PCIe switch",
+			gpuDevices: []GPUDevice{
+				{Name: "gpu-0", VRAM: 80 * GiB, NUMANode: -1, NVLinkDomain: -1, PCIeSwitch: "switch-0"},
+				{Name: "gpu-1", VRAM: 80 * GiB, NUMANode: -1, NVLinkDomain: -1, PCIeSwitch: "switch-0"},
+				{Name: "gpu-2", VRAM: 80 * GiB, NUMANode: -1, NVLinkDomain: -1, PCIeSwitch: "switch-0"},
+				{Name: "gpu-3", VRAM: 80 * GiB, NUMANode: -1, NVLinkDomain: -1, PCIeSwitch: "switch-0"},
+			},
+			gpusRequested: 4,
+			expectedBonus: BonusPCIeLocality,
+			expectNUMA:    false, // Set NUMA to -1
+			expectNVLink:  false, // Set NVLink to -1
+			expectPCIe:    true,
+		},
+		{
+			name: "8 GPUs - perfect topology (NUMA + NVLink + PCIe)",
+			gpuDevices: []GPUDevice{
+				{Name: "gpu-0", VRAM: 80 * GiB, NUMANode: 0, NVLinkDomain: 0, PCIeSwitch: "switch-0"},
+				{Name: "gpu-1", VRAM: 80 * GiB, NUMANode: 0, NVLinkDomain: 0, PCIeSwitch: "switch-0"},
+				{Name: "gpu-2", VRAM: 80 * GiB, NUMANode: 0, NVLinkDomain: 0, PCIeSwitch: "switch-0"},
+				{Name: "gpu-3", VRAM: 80 * GiB, NUMANode: 0, NVLinkDomain: 0, PCIeSwitch: "switch-0"},
+				{Name: "gpu-4", VRAM: 80 * GiB, NUMANode: 0, NVLinkDomain: 0, PCIeSwitch: "switch-0"},
+				{Name: "gpu-5", VRAM: 80 * GiB, NUMANode: 0, NVLinkDomain: 0, PCIeSwitch: "switch-0"},
+				{Name: "gpu-6", VRAM: 80 * GiB, NUMANode: 0, NVLinkDomain: 0, PCIeSwitch: "switch-0"},
+				{Name: "gpu-7", VRAM: 80 * GiB, NUMANode: 0, NVLinkDomain: 0, PCIeSwitch: "switch-0"},
+			},
+			gpusRequested: 8,
+			expectedBonus: BonusGPUNUMALocality + BonusNVLinkConnected + BonusPCIeLocality,
+			expectNUMA:    true,
+			expectNVLink:  true,
+			expectPCIe:    true,
+		},
+		{
+			name: "4 GPUs split across NUMA nodes (no NUMA bonus)",
+			gpuDevices: []GPUDevice{
+				{Name: "gpu-0", VRAM: 80 * GiB, NUMANode: 0, NVLinkDomain: -1},
+				{Name: "gpu-1", VRAM: 80 * GiB, NUMANode: 0, NVLinkDomain: -1},
+				{Name: "gpu-2", VRAM: 80 * GiB, NUMANode: 1, NVLinkDomain: -1},
+				{Name: "gpu-3", VRAM: 80 * GiB, NUMANode: 1, NVLinkDomain: -1},
+			},
+			gpusRequested: 4,
+			expectedBonus: 0,
+			expectNUMA:    false, // 2 per NUMA node, need 4
+			expectNVLink:  false, // No NVLink
+			expectPCIe:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pod := &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-pod"},
+			}
+
+			// Test individual topology checks
+			numaLocality := plugin.checkGPUNUMALocality(tt.gpuDevices, tt.gpusRequested)
+			if numaLocality != tt.expectNUMA {
+				t.Errorf("NUMA locality: expected %v, got %v", tt.expectNUMA, numaLocality)
+			}
+
+			nvlinkConnectivity := plugin.checkNVLinkConnectivity(tt.gpuDevices, tt.gpusRequested)
+			if nvlinkConnectivity != tt.expectNVLink {
+				t.Errorf("NVLink connectivity: expected %v, got %v", tt.expectNVLink, nvlinkConnectivity)
+			}
+
+			pcieLocality := plugin.checkPCIeLocality(tt.gpuDevices, tt.gpusRequested)
+			if pcieLocality != tt.expectPCIe {
+				t.Errorf("PCIe locality: expected %v, got %v", tt.expectPCIe, pcieLocality)
+			}
+
+			// Test total bonus calculation
+			totalBonus := plugin.calculateGPUTopologyBonus(tt.gpuDevices, tt.gpusRequested, pod)
+			if totalBonus != tt.expectedBonus {
+				t.Errorf("Total bonus: expected %d, got %d", tt.expectedBonus, totalBonus)
+			}
+
+			t.Logf("✓ %s: bonus=%d (NUMA=%v, NVLink=%v, PCIe=%v)",
+				tt.name, totalBonus, numaLocality, nvlinkConnectivity, pcieLocality)
+		})
+	}
+}
+
+// Test GPU NUMA locality detection
+func TestCheckGPUNUMALocality(t *testing.T) {
+	plugin := &VRAMScheduler{}
+
+	tests := []struct {
+		name          string
+		gpuDevices    []GPUDevice
+		gpusRequested int
+		expected      bool
+	}{
+		{
+			name: "4 GPUs all on NUMA node 0",
+			gpuDevices: []GPUDevice{
+				{Name: "gpu-0", NUMANode: 0},
+				{Name: "gpu-1", NUMANode: 0},
+				{Name: "gpu-2", NUMANode: 0},
+				{Name: "gpu-3", NUMANode: 0},
+			},
+			gpusRequested: 4,
+			expected:      true,
+		},
+		{
+			name: "8 GPUs split: 4 on NUMA 0, 4 on NUMA 1 (request 4)",
+			gpuDevices: []GPUDevice{
+				{Name: "gpu-0", NUMANode: 0},
+				{Name: "gpu-1", NUMANode: 0},
+				{Name: "gpu-2", NUMANode: 0},
+				{Name: "gpu-3", NUMANode: 0},
+				{Name: "gpu-4", NUMANode: 1},
+				{Name: "gpu-5", NUMANode: 1},
+				{Name: "gpu-6", NUMANode: 1},
+				{Name: "gpu-7", NUMANode: 1},
+			},
+			gpusRequested: 4,
+			expected:      true, // Can satisfy with either NUMA node
+		},
+		{
+			name: "8 GPUs split: 3 on NUMA 0, 5 on NUMA 1 (request 4)",
+			gpuDevices: []GPUDevice{
+				{Name: "gpu-0", NUMANode: 0},
+				{Name: "gpu-1", NUMANode: 0},
+				{Name: "gpu-2", NUMANode: 0},
+				{Name: "gpu-3", NUMANode: 1},
+				{Name: "gpu-4", NUMANode: 1},
+				{Name: "gpu-5", NUMANode: 1},
+				{Name: "gpu-6", NUMANode: 1},
+				{Name: "gpu-7", NUMANode: 1},
+			},
+			gpusRequested: 4,
+			expected:      true, // NUMA node 1 has 5 GPUs
+		},
+		{
+			name: "4 GPUs scattered (request 4)",
+			gpuDevices: []GPUDevice{
+				{Name: "gpu-0", NUMANode: 0},
+				{Name: "gpu-1", NUMANode: 1},
+				{Name: "gpu-2", NUMANode: 2},
+				{Name: "gpu-3", NUMANode: 3},
+			},
+			gpusRequested: 4,
+			expected:      false, // No single NUMA node has 4 GPUs
+		},
+		{
+			name: "GPUs with unknown NUMA (-1)",
+			gpuDevices: []GPUDevice{
+				{Name: "gpu-0", NUMANode: -1},
+				{Name: "gpu-1", NUMANode: -1},
+			},
+			gpusRequested: 2,
+			expected:      false, // Unknown NUMA nodes
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := plugin.checkGPUNUMALocality(tt.gpuDevices, tt.gpusRequested)
+			if result != tt.expected {
+				t.Errorf("Expected %v, got %v", tt.expected, result)
+			}
+		})
+	}
+}
+
+// Test NVLink connectivity detection
+func TestCheckNVLinkConnectivity(t *testing.T) {
+	plugin := &VRAMScheduler{}
+
+	tests := []struct {
+		name          string
+		gpuDevices    []GPUDevice
+		gpusRequested int
+		expected      bool
+	}{
+		{
+			name: "2 GPUs with NVLink domain 0",
+			gpuDevices: []GPUDevice{
+				{Name: "gpu-0", NVLinkDomain: 0},
+				{Name: "gpu-1", NVLinkDomain: 0},
+			},
+			gpusRequested: 2,
+			expected:      true,
+		},
+		{
+			name: "8 GPUs - 4 in domain 0, 4 in domain 1 (request 4)",
+			gpuDevices: []GPUDevice{
+				{Name: "gpu-0", NVLinkDomain: 0},
+				{Name: "gpu-1", NVLinkDomain: 0},
+				{Name: "gpu-2", NVLinkDomain: 0},
+				{Name: "gpu-3", NVLinkDomain: 0},
+				{Name: "gpu-4", NVLinkDomain: 1},
+				{Name: "gpu-5", NVLinkDomain: 1},
+				{Name: "gpu-6", NVLinkDomain: 1},
+				{Name: "gpu-7", NVLinkDomain: 1},
+			},
+			gpusRequested: 4,
+			expected:      true, // Either domain satisfies
+		},
+		{
+			name: "4 GPUs all different domains (request 4)",
+			gpuDevices: []GPUDevice{
+				{Name: "gpu-0", NVLinkDomain: 0},
+				{Name: "gpu-1", NVLinkDomain: 1},
+				{Name: "gpu-2", NVLinkDomain: 2},
+				{Name: "gpu-3", NVLinkDomain: 3},
+			},
+			gpusRequested: 4,
+			expected:      false, // No single domain has 4 GPUs
+		},
+		{
+			name: "Single GPU (no NVLink needed)",
+			gpuDevices: []GPUDevice{
+				{Name: "gpu-0", NVLinkDomain: 0},
+			},
+			gpusRequested: 1,
+			expected:      false, // Single GPU doesn't need NVLink
+		},
+		{
+			name: "2 GPUs with peer list",
+			gpuDevices: []GPUDevice{
+				{Name: "gpu-0", NVLinkPeers: []string{"gpu-1"}},
+				{Name: "gpu-1", NVLinkPeers: []string{"gpu-0"}},
+			},
+			gpusRequested: 2,
+			expected:      true, // Peer connectivity detected
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := plugin.checkNVLinkConnectivity(tt.gpuDevices, tt.gpusRequested)
+			if result != tt.expected {
+				t.Errorf("Expected %v, got %v", tt.expected, result)
+			}
+		})
+	}
+}
+
+// Test PCIe locality detection
+func TestCheckPCIeLocality(t *testing.T) {
+	plugin := &VRAMScheduler{}
+
+	tests := []struct {
+		name          string
+		gpuDevices    []GPUDevice
+		gpusRequested int
+		expected      bool
+	}{
+		{
+			name: "4 GPUs on same PCIe switch",
+			gpuDevices: []GPUDevice{
+				{Name: "gpu-0", PCIeSwitch: "switch-0"},
+				{Name: "gpu-1", PCIeSwitch: "switch-0"},
+				{Name: "gpu-2", PCIeSwitch: "switch-0"},
+				{Name: "gpu-3", PCIeSwitch: "switch-0"},
+			},
+			gpusRequested: 4,
+			expected:      true,
+		},
+		{
+			name: "8 GPUs - 4 on switch-0, 4 on switch-1 (request 4)",
+			gpuDevices: []GPUDevice{
+				{Name: "gpu-0", PCIeSwitch: "switch-0"},
+				{Name: "gpu-1", PCIeSwitch: "switch-0"},
+				{Name: "gpu-2", PCIeSwitch: "switch-0"},
+				{Name: "gpu-3", PCIeSwitch: "switch-0"},
+				{Name: "gpu-4", PCIeSwitch: "switch-1"},
+				{Name: "gpu-5", PCIeSwitch: "switch-1"},
+				{Name: "gpu-6", PCIeSwitch: "switch-1"},
+				{Name: "gpu-7", PCIeSwitch: "switch-1"},
+			},
+			gpusRequested: 4,
+			expected:      true, // Either switch satisfies
+		},
+		{
+			name: "4 GPUs on different switches",
+			gpuDevices: []GPUDevice{
+				{Name: "gpu-0", PCIeSwitch: "switch-0"},
+				{Name: "gpu-1", PCIeSwitch: "switch-1"},
+				{Name: "gpu-2", PCIeSwitch: "switch-2"},
+				{Name: "gpu-3", PCIeSwitch: "switch-3"},
+			},
+			gpusRequested: 4,
+			expected:      false, // No single switch has 4 GPUs
+		},
+		{
+			name: "GPUs without PCIe switch info",
+			gpuDevices: []GPUDevice{
+				{Name: "gpu-0", PCIeSwitch: ""},
+				{Name: "gpu-1", PCIeSwitch: ""},
+			},
+			gpusRequested: 2,
+			expected:      false, // No PCIe switch information
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := plugin.checkPCIeLocality(tt.gpuDevices, tt.gpusRequested)
+			if result != tt.expected {
+				t.Errorf("Expected %v, got %v", tt.expected, result)
 			}
 		})
 	}
