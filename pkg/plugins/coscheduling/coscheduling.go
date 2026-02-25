@@ -228,15 +228,11 @@ func (cs *Coscheduling) PreFilter(ctx context.Context, state framework.CycleStat
 	total := cs.calculateTotalPods(podGroupName, p.Namespace)
 	klog.Infof("PreFilter: podGroup %s/%s has %d pods, needs %d (pod: %s)", p.Namespace, podGroupName, total, minAvailable, p.Name)
 
-	if total < minAvailable {
-		klog.V(3).Infof("PreFilter: podGroup %s/%s has %d pods, needs %d (pod: %s)",
-			p.Namespace, podGroupName, total, minAvailable, p.Name)
-		return nil, framework.NewStatus(framework.Unschedulable,
-			fmt.Sprintf("pod group has %d pods, needs at least %d", total, minAvailable))
-	}
+	// Note: We don't reject here even if gang is incomplete
+	// The Permit phase will handle waiting for all gang members
+	klog.V(4).Infof("PreFilter: allowing pod %s/%s to proceed to Permit phase (gang: %d/%d)",
+		p.Namespace, p.Name, total, minAvailable)
 
-	klog.V(4).Infof("PreFilter: podGroup %s/%s has sufficient pods (%d >= %d)",
-		p.Namespace, podGroupName, total, minAvailable)
 	// Return empty PreFilterResult (not nil) to indicate processing succeeded
 	return &framework.PreFilterResult{}, framework.NewStatus(framework.Success, "")
 }
@@ -271,12 +267,25 @@ func (cs *Coscheduling) Permit(ctx context.Context, state framework.CycleState, 
 	if current < minAvailable {
 		klog.V(3).Infof("Permit: podGroup %s/%s waiting for more pods (%d/%d)",
 			namespace, podGroupName, current, minAvailable)
+
+		// Emit event for visibility
+		if cs.frameworkHandle != nil && cs.frameworkHandle.EventRecorder() != nil {
+			cs.frameworkHandle.EventRecorder().Eventf(p, nil, v1.EventTypeNormal, "GangScheduling", "Waiting",
+				"Waiting for gang members: %d/%d pods ready (need %d more)", current, minAvailable, minAvailable-current)
+		}
+
 		return framework.NewStatus(framework.Wait, ""), PermitWaitingTime
 	}
 
 	// All required pods are here, allow the entire group
 	klog.V(3).Infof("Permit: podGroup %s/%s ready to schedule (%d/%d)",
 		namespace, podGroupName, current, minAvailable)
+
+	// Emit event when gang is complete
+	if cs.frameworkHandle != nil && cs.frameworkHandle.EventRecorder() != nil {
+		cs.frameworkHandle.EventRecorder().Eventf(p, nil, v1.EventTypeNormal, "GangScheduling", "GangComplete",
+			"All gang members ready: %d/%d pods", current, minAvailable)
+	}
 
 	// Safely call IterateOverWaitingPods with recovery for test frameworks
 	if cs.frameworkHandle != nil {
@@ -345,11 +354,17 @@ func (cs *Coscheduling) calculateTotalPods(podGroupName, namespace string) int {
 }
 
 func (cs *Coscheduling) calculateRunningPodsExcluding(podGroupName, namespace string, excludeName string) int {
-	selector := labels.Set{PodGroupName: podGroupName}.AsSelector()
+	// Try new label first
+	selector := labels.Set{"pod-group.scheduling.kubenexus.io/name": podGroupName}.AsSelector()
 	pods, err := cs.podLister.Pods(namespace).List(selector)
-	if err != nil {
-		klog.Errorf("calculateRunningPods: error: %v", err)
-		return 0
+	if err != nil || len(pods) == 0 {
+		// Fallback to old label for backward compatibility
+		selector = labels.Set{PodGroupName: podGroupName}.AsSelector()
+		pods, err = cs.podLister.Pods(namespace).List(selector)
+		if err != nil {
+			klog.Errorf("calculateRunningPods: error: %v", err)
+			return 0
+		}
 	}
 
 	running := 0
