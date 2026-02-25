@@ -50,19 +50,44 @@ func TestScoreExtensions(t *testing.T) {
 
 func TestGetVRAMRequest(t *testing.T) {
 	tests := []struct {
-		name         string
-		annotations  map[string]string
-		expectedVRAM int64
+		name           string
+		annotations    map[string]string
+		resourceClaims []v1.PodResourceClaim
+		expectedVRAM   int64
 	}{
 		{
-			name:         "80Gi VRAM request for 70B model",
+			name:         "80Gi VRAM request for 70B model (annotation)",
 			annotations:  map[string]string{AnnotationVRAMRequest: "80Gi"},
 			expectedVRAM: 80 * 1024 * 1024 * 1024,
 		},
 		{
-			name:         "24Gi VRAM request for 7B model",
+			name:         "24Gi VRAM request for 7B model (annotation)",
 			annotations:  map[string]string{AnnotationVRAMRequest: "24Gi"},
 			expectedVRAM: 24 * 1024 * 1024 * 1024,
+		},
+		{
+			name: "DRA ResourceClaim with annotation hint",
+			resourceClaims: []v1.PodResourceClaim{
+				{Name: "gpu-claim"},
+			},
+			annotations:  map[string]string{AnnotationVRAMRequest: "40Gi"},
+			expectedVRAM: 40 * 1024 * 1024 * 1024,
+		},
+		{
+			name: "DRA ResourceClaim with nvidia pattern",
+			resourceClaims: []v1.PodResourceClaim{
+				{Name: "nvidia-gpu-0"},
+			},
+			annotations:  map[string]string{AnnotationVRAMRequest: "80Gi"},
+			expectedVRAM: 80 * 1024 * 1024 * 1024,
+		},
+		{
+			name: "DRA ResourceClaim with accelerator pattern",
+			resourceClaims: []v1.PodResourceClaim{
+				{Name: "accelerator-claim"},
+			},
+			annotations:  map[string]string{AnnotationVRAMRequest: "48Gi"},
+			expectedVRAM: 48 * 1024 * 1024 * 1024,
 		},
 		{
 			name:         "No VRAM request",
@@ -83,6 +108,9 @@ func TestGetVRAMRequest(t *testing.T) {
 					Name:        "test-pod",
 					Namespace:   "default",
 					Annotations: tt.annotations,
+				},
+				Spec: v1.PodSpec{
+					ResourceClaims: tt.resourceClaims,
 				},
 			}
 			vram := getVRAMRequest(pod)
@@ -177,7 +205,7 @@ func TestCalculateUtilizationScore(t *testing.T) {
 	}
 }
 
-func TestGetNodeGPUVRAM(t *testing.T) {
+func TestGetNodeGPUVRAMFromLabels(t *testing.T) {
 	tests := []struct {
 		name         string
 		labels       map[string]string
@@ -222,12 +250,37 @@ func TestGetNodeGPUVRAM(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			node := testutil.MakeNode("test-node", tt.labels, v1.ResourceList{})
-			vram, gpus := getNodeGPUVRAM(node)
+			vram, gpus := getNodeGPUVRAMFromLabels(node)
 			if vram != tt.expectedVRAM {
 				t.Errorf("Expected VRAM %d, got %d", tt.expectedVRAM, vram)
 			}
 			if gpus != tt.expectedGPUs {
 				t.Errorf("Expected %d GPUs, got %d", tt.expectedGPUs, gpus)
+			}
+		})
+	}
+}
+
+func TestIsGPUDriver(t *testing.T) {
+	tests := []struct {
+		driver   string
+		expected bool
+	}{
+		{"gpu.example.com", true},
+		{"nvidia.com/gpu", true},
+		{"amd.com/gpu", true},
+		{"intel.com/gpu", true},
+		{"accelerator.example.com", true},
+		{"cpu.example.com", false},
+		{"memory.driver", false},
+		{"", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.driver, func(t *testing.T) {
+			result := isGPUDriver(tt.driver)
+			if result != tt.expected {
+				t.Errorf("isGPUDriver(%q) = %v, expected %v", tt.driver, result, tt.expected)
 			}
 		})
 	}

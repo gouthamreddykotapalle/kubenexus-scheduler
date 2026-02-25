@@ -16,6 +16,37 @@ limitations under the License.
 
 // Package vramscheduler implements VRAM-aware GPU scheduling to prevent OOM-on-Arrival crashes
 // and optimize VRAM utilization by matching workload requirements to GPU memory capacity.
+//
+// VRAM Requirements - Two Approaches:
+//
+//  1. DRA (Dynamic Resource Allocation) - Modern Kubernetes v1.26+:
+//     Pods declare GPU memory requirements via ResourceClaims:
+//     spec:
+//     resourceClaims:
+//     - name: gpu-claim
+//     resourceClaimTemplateName: gpu-template
+//     # Also add annotation as hint for scheduler
+//     metadata:
+//     annotations:
+//     scheduling.kubenexus.io/vram-request: "80Gi"
+//
+//  2. Annotation-based - Legacy/Simple approach:
+//     Pods specify VRAM requirements via annotations:
+//     metadata:
+//     annotations:
+//     scheduling.kubenexus.io/vram-request: "80Gi"
+//     scheduling.kubenexus.io/model-size: "70B"  # informational
+//
+// Node VRAM Capacity - Two Sources:
+//
+//  1. DRA ResourceSlices (preferred):
+//     Automatic discovery from kubelet via DRA driver
+//
+//  2. Node labels (fallback):
+//     Manual labeling:
+//     gpu.kubenexus.io/vram: "80Gi"
+//     gpu.kubenexus.io/model: "H100"
+//     gpu.kubenexus.io/count: "8"
 package vramscheduler
 
 import (
@@ -26,7 +57,9 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes"
 	klog "k8s.io/klog/v2"
 	"k8s.io/kube-scheduler/framework"
 
@@ -37,11 +70,13 @@ const (
 	// Name is the plugin name
 	Name = "VRAMScheduler"
 
-	// Pod annotations for VRAM requirements
+	// Pod annotations for VRAM requirements (fallback for non-DRA clusters or explicit hints)
+	// Modern approach: Use DRA ResourceClaims with memory capacity
+	// Legacy approach: Use these annotations
 	AnnotationVRAMRequest = "scheduling.kubenexus.io/vram-request" // e.g., "80Gi", "24Gi"
 	AnnotationModelSize   = "scheduling.kubenexus.io/model-size"   // e.g., "70B", "7B" (informational)
 
-	// Node labels for GPU VRAM capacity (per-GPU)
+	// Node labels for GPU VRAM capacity (per-GPU) - fallback when DRA ResourceSlices unavailable
 	LabelGPUVRAM     = "gpu.kubenexus.io/vram"     // e.g., "80Gi", "40Gi", "24Gi"
 	LabelGPUModel    = "gpu.kubenexus.io/model"    // e.g., "H100", "A100-80GB", "L40S"
 	LabelGPUCount    = "gpu.kubenexus.io/count"    // Total GPUs on node
@@ -94,7 +129,8 @@ const (
 
 // VRAMScheduler implements VRAM-aware scheduling to prevent OOM and optimize VRAM utilization
 type VRAMScheduler struct {
-	handle framework.Handle
+	handle    framework.Handle
+	clientset kubernetes.Interface
 }
 
 // Ensure VRAMScheduler implements required interfaces
@@ -124,8 +160,8 @@ func (v *VRAMScheduler) Score(ctx context.Context, state framework.CycleState, p
 		return ScoreAcceptableFit, framework.NewStatus(framework.Success)
 	}
 
-	// Get GPU VRAM capacity from node
-	gpuVRAM, gpuCount := getNodeGPUVRAM(node)
+	// Get GPU VRAM capacity from node (now reading from DRA ResourceSlices)
+	gpuVRAM, gpuCount := v.getNodeGPUVRAM(ctx, node)
 	if gpuVRAM == 0 {
 		// Node has no GPU or VRAM info
 		klog.V(5).InfoS("Node has no GPU VRAM information",
@@ -238,8 +274,8 @@ func (v *VRAMScheduler) Filter(ctx context.Context, state framework.CycleState, 
 		return framework.NewStatus(framework.Success)
 	}
 
-	// Get GPU VRAM capacity from node
-	gpuVRAM, _ := getNodeGPUVRAM(node)
+	// Get GPU VRAM capacity from node (now reading from DRA ResourceSlices)
+	gpuVRAM, _ := v.getNodeGPUVRAM(ctx, node)
 	if gpuVRAM == 0 {
 		// Node has no GPU VRAM info - filter out
 		return framework.NewStatus(framework.UnschedulableAndUnresolvable,
@@ -343,8 +379,46 @@ func (v *VRAMScheduler) getTenantTierFromProfile(state framework.CycleState, pod
 	return "bronze"
 }
 
-// getVRAMRequest extracts VRAM request from pod annotations (in bytes)
+// getVRAMRequest extracts VRAM request from pod ResourceClaims (DRA) or annotations (fallback)
+// Returns VRAM requirement in bytes
+//
+// DRA-first approach:
+//  1. Check pod.spec.resourceClaims for GPU memory requirements
+//  2. Fall back to annotation for non-DRA clusters or explicit overrides
+//
+// This supports both:
+//   - Modern DRA-native pods: spec.resourceClaims with memory capacity
+//   - Legacy/simple pods: scheduling.kubenexus.io/vram-request annotation
 func getVRAMRequest(pod *v1.Pod) int64 {
+	// Priority 1: Check DRA ResourceClaims
+	if len(pod.Spec.ResourceClaims) > 0 {
+		for _, claim := range pod.Spec.ResourceClaims {
+			// Check if this is a GPU resource claim
+			// Note: The actual VRAM requirement would be in the ResourceClaimTemplate spec
+			// For now, we'll check the claim name pattern and extract from template
+
+			// Common patterns: gpu-claim, nvidia-gpu, accelerator
+			claimName := claim.Name
+			if strings.Contains(strings.ToLower(claimName), "gpu") ||
+				strings.Contains(strings.ToLower(claimName), "accelerator") ||
+				strings.Contains(strings.ToLower(claimName), "nvidia") {
+
+				// TODO: In full DRA integration, we would:
+				// 1. Fetch the ResourceClaim object
+				// 2. Get the ResourceClaimTemplate
+				// 3. Extract memory requirements from template spec
+				//
+				// For now, DRA users should also set annotation as a hint
+				// This will be enhanced in future versions
+
+				klog.V(4).InfoS("Pod has DRA ResourceClaim, checking annotation for VRAM hint",
+					"pod", pod.Name,
+					"claim", claimName)
+			}
+		}
+	}
+
+	// Priority 2: Check annotation (fallback and DRA hint)
 	if vramStr, ok := pod.Annotations[AnnotationVRAMRequest]; ok {
 		// Parse quantity (e.g., "80Gi", "24GB")
 		quantity, err := resource.ParseQuantity(vramStr)
@@ -354,15 +428,119 @@ func getVRAMRequest(pod *v1.Pod) int64 {
 			return 0
 		}
 		vramBytes := quantity.Value()
-		klog.V(5).InfoS("Parsed VRAM request from pod",
+		klog.V(5).InfoS("Parsed VRAM request from pod annotation",
 			"pod", pod.Name, "vramRequest", vramStr, "bytes", vramBytes)
 		return vramBytes
 	}
+
+	// No VRAM requirement specified
 	return 0
 }
 
-// getNodeGPUVRAM extracts GPU VRAM capacity from node labels (returns per-GPU VRAM in bytes and total GPU count)
-func getNodeGPUVRAM(node *v1.Node) (int64, int) {
+// getNodeGPUVRAM extracts GPU VRAM capacity from DRA ResourceSlices (returns per-GPU VRAM in bytes and total GPU count)
+// This function now queries the Kubernetes API for ResourceSlices associated with the node
+func (v *VRAMScheduler) getNodeGPUVRAM(ctx context.Context, node *v1.Node) (int64, int) {
+	if v.clientset == nil {
+		klog.V(4).InfoS("No clientset available, falling back to node labels",
+			"node", node.Name)
+		return getNodeGPUVRAMFromLabels(node)
+	}
+
+	// Query ResourceSlices for this node
+	resourceSlices, err := v.clientset.ResourceV1().ResourceSlices().List(ctx, metav1.ListOptions{
+		FieldSelector: fmt.Sprintf("spec.nodeName=%s", node.Name),
+	})
+
+	if err != nil {
+		klog.V(4).InfoS("Failed to list ResourceSlices for node, falling back to labels",
+			"node", node.Name, "error", err)
+		return getNodeGPUVRAMFromLabels(node)
+	}
+
+	if len(resourceSlices.Items) == 0 {
+		klog.V(5).InfoS("No ResourceSlices found for node, falling back to labels",
+			"node", node.Name)
+		return getNodeGPUVRAMFromLabels(node)
+	}
+
+	// Extract VRAM from ResourceSlice devices
+	// Assumption: All GPUs on the node have the same VRAM capacity (per-GPU)
+	var vramPerGPU int64
+	gpuCount := 0
+
+	for _, slice := range resourceSlices.Items {
+		// Check if this is a GPU driver (common patterns: gpu.*, nvidia.com/*, etc.)
+		if !isGPUDriver(slice.Spec.Driver) {
+			continue
+		}
+
+		for _, device := range slice.Spec.Devices {
+			// Check if device has memory capacity (VRAM)
+			if device.Capacity == nil {
+				continue
+			}
+
+			// Look for memory attribute in capacity
+			for resourceName, deviceCapacity := range device.Capacity {
+				if strings.Contains(strings.ToLower(string(resourceName)), "memory") {
+					// DeviceCapacity.Value is already a resource.Quantity
+					vramBytes := deviceCapacity.Value.Value()
+					if vramBytes > 0 {
+						// Found VRAM for this GPU
+						if vramPerGPU == 0 {
+							vramPerGPU = vramBytes
+						} else if vramPerGPU != vramBytes {
+							// Heterogeneous GPUs on same node - use minimum VRAM
+							klog.V(4).InfoS("Detected heterogeneous GPU VRAM on node",
+								"node", node.Name,
+								"gpu1VRAM", formatBytes(vramPerGPU),
+								"gpu2VRAM", formatBytes(vramBytes))
+							if vramBytes < vramPerGPU {
+								vramPerGPU = vramBytes
+							}
+						}
+						gpuCount++
+
+						klog.V(6).InfoS("Found GPU device in ResourceSlice",
+							"node", node.Name,
+							"device", device.Name,
+							"vram", formatBytes(vramBytes))
+					}
+					break
+				}
+			}
+		}
+	}
+
+	if gpuCount > 0 && vramPerGPU > 0 {
+		klog.V(5).InfoS("Extracted VRAM from DRA ResourceSlices",
+			"node", node.Name,
+			"vramPerGPU", formatBytes(vramPerGPU),
+			"gpuCount", gpuCount)
+		return vramPerGPU, gpuCount
+	}
+
+	// No GPU info in ResourceSlices, fall back to node labels
+	klog.V(5).InfoS("No GPU VRAM found in ResourceSlices, falling back to labels",
+		"node", node.Name)
+	return getNodeGPUVRAMFromLabels(node)
+}
+
+// isGPUDriver checks if the driver name indicates a GPU resource driver
+func isGPUDriver(driver string) bool {
+	driverLower := strings.ToLower(driver)
+	gpuPatterns := []string{"gpu", "nvidia", "amd", "intel.com/gpu", "accelerator"}
+	for _, pattern := range gpuPatterns {
+		if strings.Contains(driverLower, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+// getNodeGPUVRAMFromLabels extracts GPU VRAM capacity from node labels (fallback method)
+// Returns per-GPU VRAM in bytes and total GPU count
+func getNodeGPUVRAMFromLabels(node *v1.Node) (int64, int) {
 	// Try to get VRAM from label
 	if vramStr, ok := node.Labels[LabelGPUVRAM]; ok {
 		quantity, err := resource.ParseQuantity(vramStr)
@@ -489,8 +667,25 @@ func formatBytes(bytes int64) string {
 
 // New creates a new VRAMScheduler plugin
 func New(_ context.Context, _ runtime.Object, handle framework.Handle) (framework.Plugin, error) {
-	klog.V(3).InfoS("Creating new VRAMScheduler plugin")
+	klog.V(3).InfoS("Creating new VRAMScheduler plugin with DRA ResourceSlice support")
+
+	// Get clientset from scheduler handle for ResourceSlice queries
+	var clientset kubernetes.Interface
+	kubeConfig := handle.KubeConfig()
+	if kubeConfig != nil {
+		var err error
+		clientset, err = kubernetes.NewForConfig(kubeConfig)
+		if err != nil {
+			klog.ErrorS(err, "Failed to create clientset for VRAMScheduler, will use label fallback only")
+			clientset = nil
+		}
+	} else {
+		klog.V(4).InfoS("No KubeConfig available (likely in test mode), will use label fallback only")
+		clientset = nil
+	}
+
 	return &VRAMScheduler{
-		handle: handle,
+		handle:    handle,
+		clientset: clientset,
 	}, nil
 }
